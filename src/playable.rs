@@ -35,16 +35,30 @@ pub fn pick_playable(report: &PostProcessReport) -> Option<PathBuf> {
     pick_playable_in_dir(&report.final_dir)
 }
 
-/// Largest video file directly inside `dir` (not recursive).
+/// Largest video file under `dir` (recursive to a bounded depth —
+/// archives commonly extract into a release subfolder).
 #[must_use]
 pub fn pick_playable_in_dir(dir: &Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(dir).ok()?;
-    let paths: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
-        .map(|entry| entry.path())
-        .collect();
+    let mut paths: Vec<PathBuf> = Vec::new();
+    collect_files(dir, 0, 3, &mut paths);
     largest_video_file(&paths)
+}
+
+fn collect_files(dir: &Path, depth: u32, max_depth: u32, out: &mut Vec<PathBuf>) {
+    if depth > max_depth {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, depth + 1, max_depth, out);
+        } else {
+            out.push(path);
+        }
+    }
 }
 
 fn largest_video_file(paths: &[PathBuf]) -> Option<PathBuf> {
@@ -100,6 +114,49 @@ mod tests {
         write(&dir.path().join("movie.nfo"), &[0u8; 1_000]);
         write(&dir.path().join("subfolder"), b"");
         assert!(pick_playable_in_dir(dir.path()).is_none());
+    }
+
+    #[test]
+    fn finds_video_nested_in_release_subfolder() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Obfuscated archive volumes at the root (not video) ...
+        write(&dir.path().join("W9pLZXE.7z.001"), b"junk");
+        write(&dir.path().join("W9pLZXE.7z.014"), b"junk");
+        // ... and the real content in a release subfolder.
+        let sub = dir.path().join("Mr.Robot.S01E01.720p-NTb");
+        write(&sub.join("Mr_Robot.740p.mkv"), &vec![0u8; 10_000]);
+        write(&sub.join("Mr_Robot.nfo"), b"nfo");
+        let picked = pick_playable_in_dir(dir.path()).expect("must find nested video");
+        assert!(picked.ends_with("Mr_Robot.740p.mkv"), "got {picked:?}");
+    }
+
+    #[test]
+    fn nested_video_found_via_report_extracted_files() {
+        use turbonzb_core::postprocess::{PostProcessReport, PostProcessStatus};
+        use turbonzb_core::unpack::UnpackReport;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sub = dir.path().join("Release");
+        write(&sub.join("video.mkv"), &vec![0u8; 10_000]);
+        let report = PostProcessReport {
+            verify: None,
+            unpack: Some(UnpackReport {
+                extracted_files: vec!["Release/video.mkv".to_string()],
+                total_bytes: 10_000,
+                was_encrypted: false,
+            }),
+            status: PostProcessStatus::Complete,
+            final_dir: dir.path().to_path_buf(),
+        };
+        let picked = pick_playable(&report).expect("must find it");
+        assert!(picked.ends_with("video.mkv"));
+    }
+
+    #[test]
+    fn finds_video_two_levels_deep() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let deep = dir.path().join("a/b/c");
+        write(&deep.join("deep.mkv"), &[0u8; 100]);
+        assert!(pick_playable_in_dir(dir.path()).is_some());
     }
 
     #[test]
