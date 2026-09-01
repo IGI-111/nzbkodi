@@ -1,0 +1,31 @@
+[package]
+name = "nzbkodi-engine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "On-demand Usenet download engine for the nzbkodi Kodi addon: drives TurboNZB core, reports progress via a status file"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+nix = { version = "0.31", default-features = false, features = ["fs", "signal"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+# Pinned to the public TurboNZB repo; flow rev changes by pushing there,
+# then `cargo update -p turbonzb-core -p turbonzb-index`.
+turbonzb-core = { git = "https://github.com/IGI-111/TurboNZB" }
+turbonzb-index = { git = "https://github.com/IGI-111/TurboNZB" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

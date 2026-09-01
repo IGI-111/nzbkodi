@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.nzbkodi" name="nzbkodi" version="0.1.0" provider-name="IGI-111">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+  </requires>
+  <extension point="xbmc.python.pluginsource" library="main.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary>On-demand Usenet: search indexers, press play</summary>
+    <description>
+Search your Newznab indexers from Kodi, pick a release, and nzbkodi downloads it over NNTP, verifies PAR2, unpacks, and plays it — keeping the file in your download folder. Downloads survive navigation: walk away and come back via the Downloads menu.
+
+Requires the nzbkodi-engine binary on PATH (NixOS: services configuration on Face), a Usenet server, and indexer API keys.
+    </description>
+    <platform>all</platform>
+    <license>MIT</license>
+    <news>First working version: search, movies, TV episodes, downloads menu, resume.</news>
+  </extension>
+</addon>
