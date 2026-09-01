@@ -176,8 +176,9 @@ def progress_follow(engine: Engine, status_file: Path, title: str):
     def on_update(status: dict) -> None:
         state["percent"] = max(state["percent"], _bar_percent(status))
         line1, line2 = util.stage_lines(status)
-        dialog.update(int(state["percent"]), line1, line2,
-                      "Cancel keeps it downloading in the background")
+        # Kodi 21: DialogProgress.update() takes (percent, line1) only.
+        text = line1 if not line2 else "%s — %s" % (line1, line2)
+        dialog.update(int(state["percent"]), text)
 
     try:
         status, outcome = engine.wait_terminal(
