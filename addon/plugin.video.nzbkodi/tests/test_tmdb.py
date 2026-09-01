@@ -65,30 +65,85 @@ def test_tmdb_requires_any_key():
         tmdb.DEFAULT_API_KEYS = saved
 
 
+class FakeResponse:
+    def __init__(self, status, body):
+        self.status = status
+        self._body = body
+
+    def read(self):
+        return self._body
+
+
 def test_tmdb_rotates_key_on_auth_rejection():
-    import urllib.error, urllib.request, io
     client = tmdb.Tmdb("bad-key")
-    calls = []
-    class FakeResponse:
-        def __init__(self, body): self._body = body
-        def read(self): return self._body
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-    def fake_urlopen(url, timeout=None):
-        calls.append(url)
-        if "bad-key" in url:
-            raise urllib.error.HTTPError(url, 401, "unauthorized", {}, io.BytesIO(b""))
-        return FakeResponse(b'{"results": []}')
-    saved = urllib.request.urlopen
-    urllib.request.urlopen = fake_urlopen
+    requests_seen = []
+    responses = [FakeResponse(401, b""), FakeResponse(200, b'{"results": []}')]
+
+    class FakeConn:
+        def __init__(self, host):
+            self.host = host
+        def request(self, method, path):
+            requests_seen.append((client.api_key, path))
+        def getresponse(self):
+            return responses.pop(0)
+        def close(self):
+            pass
+
+    client._connect = lambda host: FakeConn(host)
+    assert client._get("/search/movie", query="x") == {"results": []}
+    assert requests_seen[0][0] == "bad-key"
+    assert requests_seen[1][0] == tmdb.DEFAULT_API_KEYS[0]
+    assert client.api_key == tmdb.DEFAULT_API_KEYS[0]
+
+
+def test_tmdb_falls_back_endpoint_when_dns_hangs():
+    import socket
+
+    client = tmdb.Tmdb("")
+    seen = []
+
+    def fake_resolver(host):
+        # First endpoint (themoviedb.org) black-holed; second resolves fine.
+        if "themoviedb" in host:
+            seen.append("DNS failed: %s" % host)
+            raise tmdb.TmdbError("DNS lookup timed out for %s" % host)
+        seen.append("resolved: %s" % host)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.2.3.4", 443))]
+
+    class FakeConn:
+        def __init__(self, host):
+            self.host = host
+        def request(self, method, path):
+            seen.append("GET %s%s" % (self.host, path))
+        def getresponse(self):
+            return FakeResponse(200, b'{"results": []}')
+        def close(self):
+            pass
+
+    client._resolver = fake_resolver
+    # Real connect behaviour: resolve (may raise), then open the connection.
+    client._connect = lambda host: (client._resolver(host) and FakeConn(host))
+    assert client._get("/movie/popular") == {"results": []}
+    assert any("DNS failed" in s for s in seen)
+    assert seen[-1].startswith("GET api.tmdb.org")
+
+
+def test_resolver_orders_ipv4_first():
+    import socket
+    infos = [
+        (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2600::1", 443, 0, 0)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.2.3.4", 443)),
+        (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2600::2", 443, 0, 0)),
+    ]
+    saved = socket.getaddrinfo
+    socket.getaddrinfo = lambda *a, **k: infos
     try:
-        result = client._get("/search/movie", query="x")
-        assert result == {"results": []}
-        assert len(calls) == 2, calls
-        assert client.api_key == tmdb.DEFAULT_API_KEYS[0]
-        assert "bad-key" not in calls[1]
+        ordered = tmdb.resolve_bounded("example.org")
     finally:
-        urllib.request.urlopen = saved
+        socket.getaddrinfo = saved
+    assert ordered[0][0] == socket.AF_INET
+    assert all(i[0] == socket.AF_INET6 for i in ordered[1:])
+    assert len(ordered) == 3
 
 
 def run():

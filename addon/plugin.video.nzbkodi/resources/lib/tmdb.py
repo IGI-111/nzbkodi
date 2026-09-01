@@ -12,9 +12,15 @@ import json
 import urllib.parse
 import urllib.request
 
-API_BASE = "https://api.themoviedb.org/3"
+API_ENDPOINTS = [
+    "https://api.themoviedb.org/3",
+    "https://api.tmdb.org/3",  # Elementum's fallback: some ISPs black-hole the other host
+]
 IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 REQUEST_TIMEOUT = 10
+# getaddrinfo() has no timeout of its own; a black-holed DNS entry hangs
+# here for 30s+ (and Kodi kills the plugin at 30s). Bound it with a thread.
+RESOLVE_TIMEOUT = 5.0
 
 # Default keys used when the addon setting is empty (the Elementum model:
 # ship a working experience out of the box; users can override in
@@ -32,6 +38,42 @@ DEFAULT_API_KEYS = [
 
 class TmdbError(Exception):
     pass
+
+
+def resolve_bounded(host: str, timeout: float = RESOLVE_TIMEOUT) -> list:
+    """getaddrinfo with a wall-clock bound, IPv4 addresses first.
+
+    Python's getaddrinfo has no timeout (a black-holed name can hang past
+    Kodi's 30s plugin kill), and Python has no Happy Eyeballs: urllib
+    iterates every AAAA record with the timeout applied per address,
+    which turns one flaky IPv6 route into a multi-minute hang. Here the
+    lookup runs in a worker thread (abandoned past `timeout`), and the
+    returned list is ordered IPv4-first so a working v4 route is tried
+    before any v6 address.
+    """
+    import socket
+    import threading
+
+    result = {}
+
+    def worker():
+        try:
+            result["infos"] = socket.getaddrinfo(
+                host, 443, 0, socket.SOCK_STREAM
+            )
+        except OSError as exc:
+            result["error"] = exc
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise TmdbError("DNS lookup timed out for %s" % host)
+    if "error" in result:
+        raise TmdbError("DNS lookup failed for %s: %s" % (host, result["error"]))
+    infos = result.get("infos") or []
+    return ([i for i in infos if i[0] == socket.AF_INET]
+            + [i for i in infos if i[0] == socket.AF_INET6])
 
 
 def _parse_titles(page: dict) -> list:
@@ -85,26 +127,67 @@ class Tmdb:
             raise TmdbError("no TMDB API key available")
         self._keys = keys
         self._key_index = 0
+        self._resolver = resolve_bounded
 
     @property
     def api_key(self) -> str:
         return self._keys[self._key_index]
 
-    def _get(self, path: str, **params) -> dict:
-        while True:
-            query = {"api_key": self.api_key}
-            query.update({k: v for k, v in params.items() if v is not None})
-            url = "%s%s?%s" % (API_BASE, path, urllib.parse.urlencode(query))
+    def _connect(self, host: str):
+        """Open an HTTPS connection, IPv4-first, per-address timeout."""
+        import http.client
+        import socket
+        import ssl
+
+        infos = self._resolver(host)
+        last_error = None
+        for af, socktype, proto, _canon, sockaddr in infos:
+            sock = socket.socket(af, socktype, proto)
+            sock.settimeout(REQUEST_TIMEOUT)
             try:
-                with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:
-                    return json.loads(response.read().decode("utf-8"))
-            except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
-                if exc.code in (401, 403) and self._key_index + 1 < len(self._keys):
-                    self._key_index += 1
-                    continue
-                raise TmdbError("TMDB rejected the API key (HTTP %d)" % exc.code) from exc
-            except (urllib.error.URLError, OSError, ValueError) as exc:  # type: ignore[attr-defined]
-                raise TmdbError("TMDB request failed: %s" % exc) from exc
+                sock.connect(sockaddr)
+            except OSError as exc:
+                last_error = exc
+                sock.close()
+                continue
+            conn = http.client.HTTPSConnection(host, timeout=REQUEST_TIMEOUT)
+            conn.sock = conn._context.wrap_socket(
+                sock, server_hostname=host
+            )
+            return conn
+        raise TmdbError("could not connect to %s: %s" % (host, last_error))
+
+    def _get(self, path: str, **params) -> dict:
+        query = {k: v for k, v in params.items() if v is not None}
+        errors = []
+        for endpoint in API_ENDPOINTS:
+            host = urllib.parse.urlparse(endpoint).hostname or ""
+            try:
+                # Key-rotation loop: retry auth rejections with next key.
+                while True:
+                    full = dict(query)
+                    full["api_key"] = self.api_key
+                    conn = self._connect(host)
+                    try:
+                        conn.request("GET", "%s?%s" % (path, urllib.parse.urlencode(full)))
+                        response = conn.getresponse()
+                        body = response.read().decode("utf-8")
+                        if response.status in (401, 403):
+                            if self._key_index + 1 < len(self._keys):
+                                self._key_index += 1
+                                continue
+                            raise TmdbError(
+                                "TMDB rejected the API key (HTTP %d)" % response.status
+                            )
+                        if response.status != 200:
+                            raise TmdbError("TMDB HTTP %d for %s" % (response.status, path))
+                        return json.loads(body)
+                    finally:
+                        conn.close()
+            except (TmdbError, OSError, ValueError) as exc:
+                errors.append("%s: %s" % (host, exc))
+                continue  # next endpoint
+        raise TmdbError("TMDB request failed: %s" % "; ".join(errors))
 
     # -- movies ----------------------------------------------------------
 
