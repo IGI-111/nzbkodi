@@ -13,15 +13,31 @@ from .tmdb import TmdbError
 
 def main(argv: list) -> None:
     handle = int(argv[1]) if len(argv) > 1 else 0
-    params = {
-        key: values[0]
-        for key, values in parse_qs(urlparse(argv[0]).query).items()
-    }
     try:
-        route(handle, params)
+        route(handle, parse_params(argv))
     except (EngineError, TmdbError) as exc:
         kodiui.notify(str(exc), error=True)
         kodiui.end_directory(handle)
+
+
+def parse_params(argv: list) -> dict:
+    """Plugin URL parameters, wherever Kodi puts them.
+
+    Kodi invokes pluginsource addons as argv = [base_url, handle, "?query"] —
+    the query string arrives in argv[2], stripped from argv[0]. Direct
+    invocations (tests, kodi-send) may embed it in argv[0] instead.
+    """
+    query = ""
+    if len(argv) > 2 and argv[2]:
+        query = argv[2]
+    elif argv and "?" in argv[0]:
+        query = urlparse(argv[0]).query
+    if query.startswith("?"):
+        query = query[1:]
+    return {
+        key: values[0]
+        for key, values in parse_qs(query).items()
+    }
 
 
 def route(handle: int, params: dict) -> None:
