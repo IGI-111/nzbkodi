@@ -160,6 +160,14 @@ def set_content(handle: int, content: str) -> None:
     xbmcplugin.setContent(handle, content)
 
 
+def container_update(url: str) -> None:
+    """Navigate the current window to a plugin URL (used from script-style
+    invocations after collecting a query)."""
+    import xbmc
+
+    xbmc.executebuiltin('Container.Update("%s")' % url)
+
+
 def end_directory(handle: int) -> None:
     xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
 

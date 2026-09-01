@@ -45,15 +45,15 @@ def route(handle: int, params: dict) -> None:
     if action in ("", "root"):
         browsing.show_root(handle)
     elif action == "search":
-        browsing.do_search(handle)
+        browsing.do_search(handle, params.get("query"))
     elif action == "movies":
         browsing.show_movies(handle)
     elif action == "movies_search":
-        browsing.do_movies_search(handle)
+        browsing.do_movies_search(handle, params.get("query"))
     elif action == "shows":
         browsing.show_shows(handle)
     elif action == "shows_search":
-        browsing.do_shows_search(handle)
+        browsing.do_shows_search(handle, params.get("query"))
     elif action == "show":
         browsing.show_show_seasons(
             handle, int(params["tmdb"]), params.get("title", "")

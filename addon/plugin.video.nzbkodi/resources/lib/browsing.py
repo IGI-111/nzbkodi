@@ -20,7 +20,11 @@ def route(action: str, **params) -> str:
 
 
 def show_root(handle: int) -> None:
-    kodiui.add_item(handle, "Search", route("search"))
+    # Search entries are non-folder items: clicking them runs the plugin
+    # script-style (no listing context), which is the only safe place to
+    # open a modal dialog. Kodi/skins re-fetch listing URLs (providers,
+    # refreshes) and a dialog in a listing would re-open on every re-fetch.
+    kodiui.add_item(handle, "Search", route("search"), is_folder=False)
     kodiui.add_item(handle, "Movies", route("movies"))
     kodiui.add_item(handle, "TV shows", route("shows"))
     kodiui.add_item(handle, "Downloads", route("downloads"))
@@ -30,17 +34,23 @@ def show_root(handle: int) -> None:
 # -- text search ----------------------------------------------------------
 
 
-def do_search(handle: int) -> None:
-    query = kodiui.input_dialog("Search releases")
-    if query:
-        show_releases(handle, kind="text", query=query, title=query)
+def do_search(handle: int, query: str | None = None) -> None:
+    """Bare invocation: ask (script context), then redirect to the query URL.
+    With a query: render the release listing — re-fetch-safe, no dialogs."""
+    if not query:
+        query = kodiui.input_dialog("Search releases")
+        if not query:
+            return
+        kodiui.container_update(route("search", query=query))
+        return
+    show_releases(handle, kind="text", query=query, title=query)
 
 
 # -- movies ---------------------------------------------------------------
 
 
 def show_movies(handle: int) -> None:
-    kodiui.add_item(handle, "Search movies…", route("movies_search"))
+    kodiui.add_item(handle, "Search movies…", route("movies_search"), is_folder=False)
     try:
         tmdb = kodiui.build_tmdb()
         for movie in tmdb.popular_movies():
@@ -61,10 +71,12 @@ def show_movies(handle: int) -> None:
     kodiui.end_directory(handle)
 
 
-def do_movies_search(handle: int) -> None:
-    query = kodiui.input_dialog("Movie title")
+def do_movies_search(handle: int, query: str | None = None) -> None:
     if not query:
-        show_movies(handle)
+        query = kodiui.input_dialog("Movie title")
+        if not query:
+            return
+        kodiui.container_update(route("movies_search", query=query))
         return
     try:
         tmdb = kodiui.build_tmdb()
@@ -89,7 +101,7 @@ def do_movies_search(handle: int) -> None:
 
 
 def show_shows(handle: int) -> None:
-    kodiui.add_item(handle, "Search shows…", route("shows_search"))
+    kodiui.add_item(handle, "Search shows…", route("shows_search"), is_folder=False)
     try:
         tmdb = kodiui.build_tmdb()
         for show in tmdb.popular_shows():
@@ -109,10 +121,12 @@ def show_shows(handle: int) -> None:
     kodiui.end_directory(handle)
 
 
-def do_shows_search(handle: int) -> None:
-    query = kodiui.input_dialog("Show title")
+def do_shows_search(handle: int, query: str | None = None) -> None:
     if not query:
-        show_shows(handle)
+        query = kodiui.input_dialog("Show title")
+        if not query:
+            return
+        kodiui.container_update(route("shows_search", query=query))
         return
     try:
         tmdb = kodiui.build_tmdb()
