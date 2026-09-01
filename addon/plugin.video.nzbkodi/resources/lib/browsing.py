@@ -55,6 +55,7 @@ def show_movies(handle: int) -> None:
                 info={"plot": movie["overview"]},
             )
     except TmdbError as exc:
+        kodiui.log("tmdb error: %s" % exc)
         kodiui.add_item(handle, "TMDB unavailable — %s" % exc, route("root"))
     kodiui.set_content(handle, "movies")
     kodiui.end_directory(handle)
@@ -102,6 +103,7 @@ def show_shows(handle: int) -> None:
                 info={"plot": show["overview"]},
             )
     except TmdbError as exc:
+        kodiui.log("tmdb error: %s" % exc)
         kodiui.add_item(handle, "TMDB unavailable — %s" % exc, route("root"))
     kodiui.set_content(handle, "tvshows")
     kodiui.end_directory(handle)

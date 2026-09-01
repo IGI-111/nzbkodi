@@ -162,6 +162,9 @@ class Tmdb:
         errors = []
         for endpoint in API_ENDPOINTS:
             host = urllib.parse.urlparse(endpoint).hostname or ""
+            # Endpoints carry a path prefix ("/3") that must reach the
+            # request line, not just the connection host.
+            base_path = urllib.parse.urlparse(endpoint).path.rstrip("/")
             try:
                 # Key-rotation loop: retry auth rejections with next key.
                 while True:
@@ -169,7 +172,9 @@ class Tmdb:
                     full["api_key"] = self.api_key
                     conn = self._connect(host)
                     try:
-                        conn.request("GET", "%s?%s" % (path, urllib.parse.urlencode(full)))
+                        conn.request(
+                            "GET", "%s%s?%s" % (base_path, path, urllib.parse.urlencode(full))
+                        )
                         response = conn.getresponse()
                         body = response.read().decode("utf-8")
                         if response.status in (401, 403):

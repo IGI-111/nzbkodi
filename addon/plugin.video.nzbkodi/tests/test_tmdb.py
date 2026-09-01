@@ -83,6 +83,7 @@ def test_tmdb_rotates_key_on_auth_rejection():
         def __init__(self, host):
             self.host = host
         def request(self, method, path):
+            assert path.startswith("/3/search/movie?"), path
             requests_seen.append((client.api_key, path))
         def getresponse(self):
             return responses.pop(0)
@@ -114,6 +115,7 @@ def test_tmdb_falls_back_endpoint_when_dns_hangs():
         def __init__(self, host):
             self.host = host
         def request(self, method, path):
+            assert path.startswith("/3/movie/popular?"), path
             seen.append("GET %s%s" % (self.host, path))
         def getresponse(self):
             return FakeResponse(200, b'{"results": []}')
