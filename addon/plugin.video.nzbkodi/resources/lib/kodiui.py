@@ -12,6 +12,7 @@ from pathlib import Path
 import xbmcaddon
 import xbmcgui
 import xbmcplugin
+import xbmcvfs
 
 from . import util
 from .engine import Engine, EngineError
@@ -57,9 +58,9 @@ def data_dir() -> Path:
 
 
 def _translate_path(special: str) -> str:
-    import xbmc
-
-    return xbmc.translatePath(special)
+    # Kodi 21: xbmc.translatePath was removed; xbmcvfs.translatePath is the
+    # supported API.
+    return xbmcvfs.translatePath(special)
 
 
 def build_engine() -> Engine:
