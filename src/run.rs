@@ -132,6 +132,12 @@ pub async fn cmd_start(
         Ok(doc) => doc,
         Err(e) => return Ok(fail_status(&status, format!("parsing NZB: {e}"))),
     };
+    if nzb_doc.files.is_empty() {
+        return Ok(fail_status(
+            &status,
+            "the NZB contains no files — removed or stubbed by the indexer?".to_string(),
+        ));
+    }
 
     let title = name.unwrap_or_else(|| {
         nzb_doc
@@ -579,6 +585,9 @@ async fn download_phase(
                 .unwrap_or_else(|| format!("{failed} segment(s) failed"));
             Ok(Outcome::Failed(message))
         }
+        (Some((completed, failed)), Ok(())) if *completed == 0 && *failed == 0 => Ok(Outcome::Failed(
+            "release contains no downloadable files — the NZB is empty (removed or stubbed by the indexer?)".to_string(),
+        )),
         (Some(_), Ok(())) => Ok(Outcome::Completed),
         (_, Err(e)) => Ok(Outcome::Failed(format!("engine: {e}"))),
         (None, Ok(())) => {
