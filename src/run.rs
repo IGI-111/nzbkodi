@@ -128,16 +128,24 @@ pub async fn cmd_start(
         Ok(bytes) => bytes,
         Err(e) => return Ok(fail_status(&status, format!("{e:#}"))),
     };
+    tracing::info!(bytes = nzb_bytes.len(), source = ?source, "nzb fetched");
     let nzb_doc = match nzb::parse(&nzb_bytes) {
         Ok(doc) => doc,
         Err(e) => return Ok(fail_status(&status, format!("parsing NZB: {e}"))),
     };
-    if nzb_doc.files.is_empty() {
+    if nzb_doc.files.is_empty() || nzb_doc.files.iter().all(|f| f.segment_count == 0) {
         return Ok(fail_status(
             &status,
-            "the NZB contains no files — removed or stubbed by the indexer?".to_string(),
+            "the NZB contains no downloadable files — removed or stubbed by the indexer?"
+                .to_string(),
         ));
     }
+    let parsed_segments: u32 = nzb_doc.files.iter().map(|f| f.segment_count).sum();
+    tracing::info!(
+        files = nzb_doc.files.len(),
+        total_segments = parsed_segments,
+        "nzb parsed"
+    );
 
     let title = name.unwrap_or_else(|| {
         nzb_doc
