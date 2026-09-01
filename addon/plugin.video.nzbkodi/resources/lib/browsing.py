@@ -182,7 +182,6 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
                 ),
                 label2=ep["air_date"],
                 art={"poster": ep["still"]} if ep["still"] else None,
-                is_folder=False,
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
