@@ -490,6 +490,19 @@ async fn download_phase(
 
     let mut speed = SpeedWindow::new(SPEED_WINDOW_MS);
     let started = Instant::now();
+    let (mut bytes_done, mut segments_done, total_bytes, total_segments) =
+        match queue.get_job(job_id).await {
+            Ok(job) => (
+                job.downloaded_bytes,
+                job.segments_done,
+                job.total_bytes,
+                job.total_segments,
+            ),
+            Err(e) => {
+                tracing::warn!("reading job stats: {e}");
+                (0, 0, 0, 0)
+            }
+        };
     let mut finished: Option<(usize, usize)> = None;
     let mut ticker = tokio::time::interval(STATUS_TICK);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -499,6 +512,10 @@ async fn download_phase(
             event = rx.recv() => match event {
                 Some(ProgressEvent::SegmentDone { bytes, .. }) => {
                     speed.record_at(elapsed_ms(started), bytes);
+                    // The queue's aggregate columns only refresh on
+                    // cancel/finalize, so track progress from events.
+                    bytes_done = bytes_done.saturating_add(bytes);
+                    segments_done += 1;
                 }
                 Some(ProgressEvent::ArticleError { filename, segment, error }) => {
                     tracing::warn!(filename, segment, "article error: {error}");
@@ -511,7 +528,10 @@ async fn download_phase(
                 None => break, // Engine returned; done or cancelled.
             },
             _ = ticker.tick() => {
-                refresh_job_stats(queue, job_id, status, &mut speed, started).await;
+                refresh_job_stats(
+                    status, bytes_done, segments_done, total_bytes, total_segments,
+                    &mut speed, started,
+                );
             }
             _ = cancel_rx.changed() => {
                 // Signal arrived; the engine observes the shared flag and
@@ -522,7 +542,15 @@ async fn download_phase(
     rx.close();
 
     // One last refresh so the file reflects the final download state.
-    refresh_job_stats(queue, job_id, status, &mut speed, started).await;
+    refresh_job_stats(
+        status,
+        bytes_done,
+        segments_done,
+        total_bytes,
+        total_segments,
+        &mut speed,
+        started,
+    );
 
     // Flatten `Result<Result<(), CoreError>, JoinError>` into a message.
     let run_result: Result<(), String> = match runner.await {
@@ -722,27 +750,24 @@ fn fail_status(status: &StatusHandle, message: String) -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// Pull fresh stats from the queue into the status file.
-async fn refresh_job_stats(
-    queue: &Arc<QueueManager>,
-    job_id: i64,
+/// Push live stats into the status file.
+fn refresh_job_stats(
     status: &StatusHandle,
+    bytes_done: u64,
+    segments_done: u32,
+    total_bytes: u64,
+    total_segments: u32,
     speed: &mut SpeedWindow,
     started: Instant,
 ) {
-    match queue.get_job(job_id).await {
-        Ok(job) => {
-            status.update(|s| {
-                s.segments_done = job.segments_done;
-                s.segments_total = job.total_segments;
-                s.bytes_done = job.downloaded_bytes;
-                s.bytes_total = job.total_bytes;
-                s.percent = percent(job.downloaded_bytes, job.total_bytes);
-                s.speed_bps = speed.bps_at(elapsed_ms(started));
-            });
-        }
-        Err(e) => tracing::warn!("reading job stats: {e}"),
-    }
+    status.update(|s| {
+        s.segments_done = segments_done;
+        s.segments_total = total_segments;
+        s.bytes_done = bytes_done;
+        s.bytes_total = total_bytes;
+        s.percent = percent(bytes_done, total_bytes);
+        s.speed_bps = speed.bps_at(elapsed_ms(started));
+    });
 }
 
 fn elapsed_ms(started: Instant) -> u64 {

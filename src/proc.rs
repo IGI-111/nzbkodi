@@ -78,6 +78,11 @@ pub fn init_tracing(data_dir: &Path) -> Result<()> {
         .with_env_filter(filter)
         .with_writer(writer)
         .init();
+    // The engine runs detached with stderr discarded; route panics into
+    // the log so failures are diagnosable.
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!(panic = %info, "engine panic");
+    }));
     Ok(())
 }
 
