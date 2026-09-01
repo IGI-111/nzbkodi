@@ -47,12 +47,16 @@ def show_movies(handle: int) -> None:
             kodiui.add_item(
                 handle,
                 "%s (%s)" % (movie["title"], movie["year"]) if movie["year"] else movie["title"],
-                route("releases", kind="movie", tmdb=movie["id"], title=movie["title"]),
+                route(
+                    "releases", kind="movie", tmdb=movie["id"], title=movie["title"],
+                    poster=movie["poster"],
+                ),
                 art={"poster": movie["poster"]} if movie["poster"] else None,
                 info={"plot": movie["overview"]},
             )
     except TmdbError as exc:
         kodiui.add_item(handle, "TMDB unavailable — %s" % exc, route("root"))
+    kodiui.set_content(handle, "movies")
     kodiui.end_directory(handle)
 
 
@@ -67,12 +71,16 @@ def do_movies_search(handle: int) -> None:
             kodiui.add_item(
                 handle,
                 "%s (%s)" % (movie["title"], movie["year"]) if movie["year"] else movie["title"],
-                route("releases", kind="movie", tmdb=movie["id"], title=movie["title"]),
+                route(
+                    "releases", kind="movie", tmdb=movie["id"], title=movie["title"],
+                    poster=movie["poster"],
+                ),
                 art={"poster": movie["poster"]} if movie["poster"] else None,
                 info={"plot": movie["overview"]},
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
+    kodiui.set_content(handle, "movies")
     kodiui.end_directory(handle)
 
 
@@ -87,12 +95,15 @@ def show_shows(handle: int) -> None:
             kodiui.add_item(
                 handle,
                 "%s (%s)" % (show["title"], show["year"]) if show["year"] else show["title"],
-                route("show", tmdb=show["id"], title=show["title"]),
+                route(
+                    "show", tmdb=show["id"], title=show["title"], poster=show["poster"],
+                ),
                 art={"poster": show["poster"]} if show["poster"] else None,
                 info={"plot": show["overview"]},
             )
     except TmdbError as exc:
         kodiui.add_item(handle, "TMDB unavailable — %s" % exc, route("root"))
+    kodiui.set_content(handle, "tvshows")
     kodiui.end_directory(handle)
 
 
@@ -107,12 +118,15 @@ def do_shows_search(handle: int) -> None:
             kodiui.add_item(
                 handle,
                 "%s (%s)" % (show["title"], show["year"]) if show["year"] else show["title"],
-                route("show", tmdb=show["id"], title=show["title"]),
+                route(
+                    "show", tmdb=show["id"], title=show["title"], poster=show["poster"],
+                ),
                 art={"poster": show["poster"]} if show["poster"] else None,
                 info={"plot": show["overview"]},
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
+    kodiui.set_content(handle, "tvshows")
     kodiui.end_directory(handle)
 
 
@@ -123,11 +137,15 @@ def show_show_seasons(handle: int, tmdb_id: int, title: str) -> None:
             kodiui.add_item(
                 handle,
                 "%s (%d episodes)" % (season["title"], season["episode_count"]),
-                route("episodes", tmdb=tmdb_id, season=season["season"], title=title),
+                route(
+                    "episodes", tmdb=tmdb_id, season=season["season"], title=title,
+                    poster=season["poster"],
+                ),
                 art={"poster": season["poster"]} if season["poster"] else None,
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
+    kodiui.set_content(handle, "seasons")
     kodiui.end_directory(handle)
 
 
@@ -144,6 +162,7 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
                     season=ep["season"],
                     episode=ep["episode"],
                     title="%s S%02dE%02d" % (title, ep["season"], ep["episode"]),
+                    poster=ep["still"],
                 ),
                 label2=ep["air_date"],
                 art={"poster": ep["still"]} if ep["still"] else None,
@@ -151,6 +170,7 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
+    kodiui.set_content(handle, "episodes")
     kodiui.end_directory(handle)
 
 
@@ -159,9 +179,8 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
 
 def show_releases(handle: int, kind: str, title: str, query: str | None = None,
                   season: int | None = None, episode: int | None = None,
-                  tmdb: int | None = None) -> None:
+                  tmdb: int | None = None, poster: str | None = None) -> None:
     """Search all indexers and list releases; picking one starts it."""
-    from . import picking
 
     try:
         engine = kodiui.build_engine()
@@ -186,6 +205,7 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
             kodiui.notify("No results — indexer errors (see kodi.log)", error=True)
         else:
             kodiui.notify("No results on your indexers")
+
     for hit in hits:
         sources = ",".join(hit.get("indexers") or [])
         label2 = "%s · %s · %s" % (
@@ -193,6 +213,13 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
             util.format_age(int(hit.get("age_days") or 0)),
             sources,
         )
+        art = {k: poster for k in ("poster", "fanart")} if poster else None
+        info = {
+            "title": hit.get("title") or "",
+            "size": int(hit.get("size") or 0),
+            "dateadded": util.iso_datetime(int(hit.get("post_date") or 0)),
+            "plot": label2,
+        }
         kodiui.add_item(
             handle,
             hit.get("title") or "release",
@@ -203,8 +230,13 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
                 release=hit.get("title", ""),
             ),
             label2=label2,
+            art=art,
+            info=info,
             is_folder=False,
         )
+    # "movies" content so skins render media layouts: poster thumbs, fanart
+    # backdrop, and the label2 column (size · age · indexers) in media views.
+    kodiui.set_content(handle, "movies")
     kodiui.end_directory(handle)
 
 

@@ -27,6 +27,13 @@ def format_age(age_days: int) -> str:
     return "%dd" % age_days
 
 
+def iso_datetime(unix: int) -> str:
+    """Unix timestamp as Kodi's `dateadded` format."""
+    import time
+
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(unix or 0))
+
+
 def indexer_name(url: str) -> str:
     """A friendly display name derived from the indexer's API URL."""
     try:

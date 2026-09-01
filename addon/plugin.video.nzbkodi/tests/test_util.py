@@ -27,6 +27,11 @@ def test_indexer_name():
     assert util.indexer_name("https://example.org") == "example.org"
 
 
+def test_iso_datetime():
+    assert util.iso_datetime(1725148800) == "2024-09-01 00:00:00"
+    assert util.iso_datetime(0) == "1970-01-01 00:00:00"
+
+
 def test_stage_lines_downloading():
     lines = util.stage_lines(
         {"stage": "downloading", "percent": 42.0, "speed_bps": 30_000_000,

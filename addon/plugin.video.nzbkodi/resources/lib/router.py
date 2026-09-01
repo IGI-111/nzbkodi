@@ -74,6 +74,7 @@ def route(handle: int, params: dict) -> None:
             season=params.get("season"),
             episode=params.get("episode"),
             tmdb=params.get("tmdb"),
+            poster=params.get("poster"),
         )
     elif action == "pick":
         picking.pick_release(

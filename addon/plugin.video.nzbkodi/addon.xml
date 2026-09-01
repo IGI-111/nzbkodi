@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.video.nzbkodi" name="nzbkodi" version="0.1.5" provider-name="IGI-111">
+<addon id="plugin.video.nzbkodi" name="nzbkodi" version="0.1.6" provider-name="IGI-111">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
   </requires>

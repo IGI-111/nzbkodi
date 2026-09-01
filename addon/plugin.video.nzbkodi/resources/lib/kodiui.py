@@ -156,6 +156,12 @@ def add_item(handle: int, label: str, url: str, label2: str = "", art: dict | No
     xbmcplugin.addDirectoryItem(handle, url, item, isFolder=is_folder)
 
 
+def set_content(handle: int, content: str) -> None:
+    """Set the directory content type so skins use media layouts (posters,
+    two-line rows, label2 columns) instead of the plain file list."""
+    xbmcplugin.setContent(handle, content)
+
+
 def end_directory(handle: int) -> None:
     xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
 
