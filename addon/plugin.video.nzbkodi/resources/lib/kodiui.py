@@ -82,12 +82,10 @@ def build_engine() -> Engine:
 
 
 def build_tmdb() -> Tmdb:
-    from .tmdb import Tmdb, TmdbError
+    from .tmdb import Tmdb
 
-    key = addon().getSetting("tmdb_api_key")
-    if not key:
-        raise TmdbError("No TMDB API key configured (settings → General)")
-    return Tmdb(key)
+    # Empty setting falls back to the bundled default keys.
+    return Tmdb(addon().getSetting("tmdb_api_key"))
 
 
 # -- dialogs / playback --------------------------------------------------

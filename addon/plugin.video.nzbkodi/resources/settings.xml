@@ -4,7 +4,7 @@
     <category label="General">
         <setting id="download_dir" type="folder" label="Download folder (files are kept here)" default=""/>
         <setting id="engine_path" type="text" label="nzbkodi-engine binary (name on PATH or absolute)" default="nzbkodi-engine"/>
-        <setting id="tmdb_api_key" type="text" label="TMDB API key (v3, free from themoviedb.org)" default=""/>
+        <setting id="tmdb_api_key" type="text" label="TMDB API key (optional; bundled defaults used otherwise)" default=""/>
     </category>
 
     <!-- Usenet server -->

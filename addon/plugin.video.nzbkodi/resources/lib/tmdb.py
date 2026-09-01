@@ -16,6 +16,19 @@ API_BASE = "https://api.themoviedb.org/3"
 IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 REQUEST_TIMEOUT = 10
 
+# Default keys used when the addon setting is empty (the Elementum model:
+# ship a working experience out of the box; users can override in
+# settings). These are the keys bundled with Elementum (elgatito/elementum,
+# tmdb/tmdb.go); TMDB v3 keys identify an app rather than guard a secret.
+# On 401/403 the client rotates to the next key (Elementum's fallback
+# pattern — keys occasionally get region-blocked).
+DEFAULT_API_KEYS = [
+    "8cf43ad9c085135b9479ad5cf6bbcbda",
+    "ae4bd1b6fce2a5648671bfc171d15ba4",
+    "29a551a65eef108dd01b46e27eb0554a",
+]
+
+
 
 class TmdbError(Exception):
     pass
@@ -56,22 +69,42 @@ def _parse_episodes(season: dict) -> list:
 
 
 class Tmdb:
-    """A thin TMDB v3 client (api_key in the query string)."""
+    """A thin TMDB v3 client (api_key in the query string).
 
-    def __init__(self, api_key: str):
-        if not api_key:
-            raise TmdbError("no TMDB API key configured (addon settings)")
-        self.api_key = api_key
+    A user-provided key (addon settings) is tried first; otherwise the
+    bundled defaults are used. On auth rejection the next key is tried.
+    """
+
+    def __init__(self, api_key: str = ""):
+        keys = []
+        user = (api_key or "").strip()
+        if user:
+            keys.append(user)
+        keys.extend(DEFAULT_API_KEYS)
+        if not keys:
+            raise TmdbError("no TMDB API key available")
+        self._keys = keys
+        self._key_index = 0
+
+    @property
+    def api_key(self) -> str:
+        return self._keys[self._key_index]
 
     def _get(self, path: str, **params) -> dict:
-        query = {"api_key": self.api_key}
-        query.update({k: v for k, v in params.items() if v is not None})
-        url = "%s%s?%s" % (API_BASE, path, urllib.parse.urlencode(query))
-        try:
-            with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, ValueError) as exc:  # type: ignore[attr-defined]
-            raise TmdbError("TMDB request failed: %s" % exc) from exc
+        while True:
+            query = {"api_key": self.api_key}
+            query.update({k: v for k, v in params.items() if v is not None})
+            url = "%s%s?%s" % (API_BASE, path, urllib.parse.urlencode(query))
+            try:
+                with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
+                if exc.code in (401, 403) and self._key_index + 1 < len(self._keys):
+                    self._key_index += 1
+                    continue
+                raise TmdbError("TMDB rejected the API key (HTTP %d)" % exc.code) from exc
+            except (urllib.error.URLError, OSError, ValueError) as exc:  # type: ignore[attr-defined]
+                raise TmdbError("TMDB request failed: %s" % exc) from exc
 
     # -- movies ----------------------------------------------------------
 
