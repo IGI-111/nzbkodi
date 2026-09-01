@@ -1,48 +1,46 @@
-<?xml version="1.0" encoding="utf-8"?>
-<settings version="2">
-  <section id="general" label="General">
-    <category id="main" label="General">
-      <setting id="download_dir" type="path" label="Download folder (files are kept here)" default=""/>
-      <setting id="engine_path" type="string" label="nzbkodi-engine binary (name on PATH or absolute)" default="nzbkodi-engine"/>
-      <setting id="tmdb_api_key" type="string" label="TMDB API key (v3, free from themoviedb.org)" default=""/>
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <!-- General -->
+    <category label="General">
+        <setting id="download_dir" type="folder" label="Download folder (files are kept here)" default=""/>
+        <setting id="engine_path" type="text" label="nzbkodi-engine binary (name on PATH or absolute)" default="nzbkodi-engine"/>
+        <setting id="tmdb_api_key" type="text" label="TMDB API key (v3, free from themoviedb.org)" default=""/>
     </category>
-  </section>
-  <section id="usenet" label="Usenet server">
-    <category id="server" label="Usenet server">
-      <setting id="nntp_host" type="string" label="Server host" default=""/>
-      <setting id="nntp_port" type="integer" label="Port (563 TLS, 119 plain)" default="563" min="1" max="65535"/>
-      <setting id="nntp_ssl" type="boolean" label="Use TLS" default="true"/>
-      <setting id="nntp_user" type="string" label="Username" default=""/>
-      <setting id="nntp_password" type="string" label="Password" default="" option="hidden"/>
-      <setting id="nntp_connections" type="integer" label="Connections" default="8" min="1" max="64"/>
+
+    <!-- Usenet server -->
+    <category label="Usenet server">
+        <setting id="nntp_host" type="text" label="Server host" default=""/>
+        <setting id="nntp_port" type="number" label="Port (563 TLS, 119 plain)" default="563"/>
+        <setting id="nntp_ssl" type="bool" label="Use TLS" default="true"/>
+        <setting id="nntp_user" type="text" label="Username" default=""/>
+        <setting id="nntp_password" type="text" label="Password" default="" option="hidden"/>
+        <setting id="nntp_connections" type="number" label="Connections" default="8"/>
     </category>
-  </section>
-  <section id="indexers" label="Indexers">
-    <category id="idx" label="Indexers (Newznab API)">
-      <group id="indexer1" label="Indexer 1">
-        <setting id="indexer1_url" type="string" label="API URL (e.g. https://example.com/api)" default=""/>
-        <setting id="indexer1_key" type="string" label="API key" default="" option="hidden"/>
-      </group>
-      <group id="indexer2" label="Indexer 2">
-        <setting id="indexer2_url" type="string" label="API URL" default=""/>
-        <setting id="indexer2_key" type="string" label="API key" default="" option="hidden"/>
-      </group>
-      <group id="indexer3" label="Indexer 3">
-        <setting id="indexer3_url" type="string" label="API URL" default=""/>
-        <setting id="indexer3_key" type="string" label="API key" default="" option="hidden"/>
-      </group>
-      <group id="indexer4" label="Indexer 4">
-        <setting id="indexer4_url" type="string" label="API URL" default=""/>
-        <setting id="indexer4_key" type="string" label="API key" default="" option="hidden"/>
-      </group>
-      <group id="indexer5" label="Indexer 5">
-        <setting id="indexer5_url" type="string" label="API URL" default=""/>
-        <setting id="indexer5_key" type="string" label="API key" default="" option="hidden"/>
-      </group>
-      <group id="indexer6" label="Indexer 6">
-        <setting id="indexer6_url" type="string" label="API URL" default=""/>
-        <setting id="indexer6_key" type="string" label="API key" default="" option="hidden"/>
-      </group>
+
+    <!-- Indexers -->
+    <category label="Indexers (Newznab API)">
+        <setting type="lsep" label="Indexer 1"/>
+        <setting id="indexer1_url" type="text" label="API URL (e.g. https://example.com/api)" default=""/>
+        <setting id="indexer1_key" type="text" label="API key" default="" option="hidden"/>
+
+        <setting type="lsep" label="Indexer 2"/>
+        <setting id="indexer2_url" type="text" label="API URL" default=""/>
+        <setting id="indexer2_key" type="text" label="API key" default="" option="hidden"/>
+
+        <setting type="lsep" label="Indexer 3"/>
+        <setting id="indexer3_url" type="text" label="API URL" default=""/>
+        <setting id="indexer3_key" type="text" label="API key" default="" option="hidden"/>
+
+        <setting type="lsep" label="Indexer 4"/>
+        <setting id="indexer4_url" type="text" label="API URL" default=""/>
+        <setting id="indexer4_key" type="text" label="API key" default="" option="hidden"/>
+
+        <setting type="lsep" label="Indexer 5"/>
+        <setting id="indexer5_url" type="text" label="API URL" default=""/>
+        <setting id="indexer5_key" type="text" label="API key" default="" option="hidden"/>
+
+        <setting type="lsep" label="Indexer 6"/>
+        <setting id="indexer6_url" type="text" label="API URL" default=""/>
+        <setting id="indexer6_key" type="text" label="API key" default="" option="hidden"/>
     </category>
-  </section>
 </settings>
