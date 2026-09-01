@@ -102,6 +102,13 @@ def notify(message: str, error: bool = False) -> None:
     )
 
 
+def log(message: str) -> None:
+    """Write to kodi.log at warning level (visible with default logging)."""
+    import xbmc
+
+    xbmc.log("[nzbkodi] %s" % message, xbmc.LOGWARNING)
+
+
 def ok_dialog(message: str) -> None:
     xbmcgui.Dialog().ok("nzbkodi", message)
 
@@ -162,8 +169,8 @@ def progress_follow(engine: Engine, status_file: Path, title: str):
     Returns (status, outcome) from `Engine.wait_terminal`.
     """
     dialog = xbmcgui.DialogProgress()
-    dialog.create("nzbkodi — %s" % title, "Preparing download…",
-                  "", "Cancel keeps it downloading in the background")
+    # Kodi 21: create() takes (heading, line1) only — extra lines go via update().
+    dialog.create("nzbkodi — %s" % title, "Preparing download…")
     state = {"percent": 0}
 
     def on_update(status: dict) -> None:

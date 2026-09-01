@@ -326,6 +326,14 @@ pub async fn cmd_search(
     if cfg.indexers.is_empty() {
         bail!("no indexers configured — add some in the addon settings");
     }
+    // One-shot command: log to stderr so the addon can surface per-indexer
+    // errors (bad URL, auth, timeouts) instead of a bare empty result.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .init();
     let query = build_search_query(kind, limit, max_age_days)?;
 
     let mut aggregator = SearchAggregator::new(30);

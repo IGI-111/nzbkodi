@@ -43,6 +43,8 @@ class Engine:
         self.data_dir = Path(data_dir)
         self.status_dir = self.data_dir / "status"
         self.log_path = self.data_dir / "engine.log"
+        # stderr of the last engine invocation (per-indexer search errors land here)
+        self.last_stderr = ""
 
     # -- paths -----------------------------------------------------------
 
@@ -128,6 +130,7 @@ class Engine:
         )
         if proc.returncode != 0:
             raise EngineError(proc.stderr.strip() or "search failed")
+        self.last_stderr = (proc.stderr or "").strip()
         try:
             hits = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:

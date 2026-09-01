@@ -180,7 +180,12 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
         return
 
     if not hits:
-        kodiui.notify("No results on your indexers")
+        detail = getattr(engine, "last_stderr", "")
+        if detail:
+            kodiui.log("indexer errors: %s" % detail)
+            kodiui.notify("No results — indexer errors (see kodi.log)", error=True)
+        else:
+            kodiui.notify("No results on your indexers")
     for hit in hits:
         sources = ",".join(hit.get("indexers") or [])
         label2 = "%s · %s · %s" % (
