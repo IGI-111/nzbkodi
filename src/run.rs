@@ -799,7 +799,13 @@ async fn fetch_nzb(source: &NzbSource) -> Result<Vec<u8>> {
             .with_context(|| format!("reading {}", path.display())),
         NzbSource::Url(url) => {
             let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
+                // Some indexers (e.g. NZBgeek) reject UA-less requests on
+                // `t=get` with error 109 — identify ourselves like any other
+                // downloader client.
+                .user_agent(concat!("nzbkodi-engine/", env!("CARGO_PKG_VERSION")))
+                // Indexer CDNs can be slow from some regions; a multi-MB NZB
+                // needs more than the old 30s.
+                .timeout(Duration::from_secs(120))
                 .build()?;
             let mut response = client
                 .get(url.clone())
