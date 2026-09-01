@@ -70,7 +70,9 @@ pub fn init_tracing(data_dir: &Path) -> Result<()> {
         .append(true)
         .open(&path)
         .with_context(|| format!("opening log file {}", path.display()))?;
-    let writer = SharedLogWriter(Arc::new(Mutex::new(std::io::BufWriter::new(file))));
+    // Unbuffered on purpose: a hung or killed engine must not swallow its
+    // last log lines in a lost buffer (cost us a diagnosis once).
+    let writer = SharedLogWriter(Arc::new(Mutex::new(file)));
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
@@ -88,7 +90,7 @@ pub fn init_tracing(data_dir: &Path) -> Result<()> {
 
 /// A `MakeWriter` that tees into one shared buffered file.
 #[derive(Clone, Debug)]
-struct SharedLogWriter(Arc<Mutex<std::io::BufWriter<File>>>);
+struct SharedLogWriter(Arc<Mutex<File>>);
 
 impl std::io::Write for SharedLogWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
