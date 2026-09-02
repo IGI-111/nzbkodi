@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import urllib.parse
 
-from . import kodiui, util
+from . import history, kodiui, util
 from .engine import EngineError
 from .tmdb import TmdbError
 
@@ -14,6 +14,10 @@ def route(action: str, **params) -> str:
     query = {"action": action}
     query.update({k: v for k, v in params.items() if v not in (None, "")})
     return "plugin://%s/?%s" % (kodiui.ADDON_ID, urllib.parse.urlencode(query))
+
+
+def _recent(kind: str) -> list:
+    return history.load(kodiui.data_dir(), kind)[: history.DISPLAY_LIMIT]
 
 
 # -- root ----------------------------------------------------------------
@@ -25,6 +29,8 @@ def show_root(handle: int) -> None:
     # open a modal dialog. Kodi/skins re-fetch listing URLs (providers,
     # refreshes) and a dialog in a listing would re-open on every re-fetch.
     kodiui.add_item(handle, "Search", route("search"), is_folder=False)
+    for query in _recent("releases"):
+        kodiui.add_item(handle, query, route("search", query=query))
     kodiui.add_item(handle, "Movies", route("movies"))
     kodiui.add_item(handle, "TV shows", route("shows"))
     kodiui.add_item(handle, "Downloads", route("downloads"))
@@ -43,6 +49,7 @@ def do_search(handle: int, query: str | None = None) -> None:
             return
         kodiui.container_update(route("search", query=query))
         return
+    history.record(kodiui.data_dir(), "releases", query)
     show_releases(handle, kind="text", query=query, title=query)
 
 
@@ -51,6 +58,13 @@ def do_search(handle: int, query: str | None = None) -> None:
 
 def show_movies(handle: int) -> None:
     kodiui.add_item(handle, "Search movies…", route("movies_search"), is_folder=False)
+    for query in _recent("movies"):
+        kodiui.add_item(handle, query, route("movies_search", query=query))
+    kodiui.add_item(handle, "Popular", route("popular_movies"))
+    kodiui.end_directory(handle)
+
+
+def show_popular_movies(handle: int) -> None:
     try:
         tmdb = kodiui.build_tmdb()
         for movie in tmdb.popular_movies():
@@ -78,6 +92,7 @@ def do_movies_search(handle: int, query: str | None = None) -> None:
             return
         kodiui.container_update(route("movies_search", query=query))
         return
+    history.record(kodiui.data_dir(), "movies", query)
     try:
         tmdb = kodiui.build_tmdb()
         for movie in tmdb.search_movies(query):
@@ -102,6 +117,13 @@ def do_movies_search(handle: int, query: str | None = None) -> None:
 
 def show_shows(handle: int) -> None:
     kodiui.add_item(handle, "Search shows…", route("shows_search"), is_folder=False)
+    for query in _recent("shows"):
+        kodiui.add_item(handle, query, route("shows_search", query=query))
+    kodiui.add_item(handle, "Popular", route("popular_shows"))
+    kodiui.end_directory(handle)
+
+
+def show_popular_shows(handle: int) -> None:
     try:
         tmdb = kodiui.build_tmdb()
         for show in tmdb.popular_shows():
@@ -128,6 +150,7 @@ def do_shows_search(handle: int, query: str | None = None) -> None:
             return
         kodiui.container_update(route("shows_search", query=query))
         return
+    history.record(kodiui.data_dir(), "shows", query)
     try:
         tmdb = kodiui.build_tmdb()
         for show in tmdb.search_shows(query):

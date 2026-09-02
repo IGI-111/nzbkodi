@@ -48,10 +48,14 @@ def route(handle: int, params: dict) -> None:
         browsing.do_search(handle, params.get("query"))
     elif action == "movies":
         browsing.show_movies(handle)
+    elif action == "popular_movies":
+        browsing.show_popular_movies(handle)
     elif action == "movies_search":
         browsing.do_movies_search(handle, params.get("query"))
     elif action == "shows":
         browsing.show_shows(handle)
+    elif action == "popular_shows":
+        browsing.show_popular_shows(handle)
     elif action == "shows_search":
         browsing.do_shows_search(handle, params.get("query"))
     elif action == "show":
