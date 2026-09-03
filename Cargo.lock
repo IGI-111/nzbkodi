@@ -2392,7 +2392,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "turbonzb-core"
 version = "0.1.0"
-source = "git+https://github.com/IGI-111/TurboNZB#5273088f2fd1d0ba7fe23688bacb0f230d22a608"
+source = "git+https://github.com/IGI-111/TurboNZB#02ccbee73904cba56334759d6ab320131d760a24"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2418,7 +2418,7 @@ dependencies = [
 [[package]]
 name = "turbonzb-index"
 version = "0.1.0"
-source = "git+https://github.com/IGI-111/TurboNZB#5273088f2fd1d0ba7fe23688bacb0f230d22a608"
+source = "git+https://github.com/IGI-111/TurboNZB#02ccbee73904cba56334759d6ab320131d760a24"
 dependencies = [
  "anyhow",
  "futures",
