@@ -41,6 +41,13 @@ const SPEED_WINDOW_MS: u64 = 5_000;
 /// Cap on fetched NZB documents (they are small; larger is abuse).
 const NZB_SIZE_CAP: usize = 32 * 1024 * 1024;
 
+/// No completed segment for this long = the download is dead, not slow.
+const STALL_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// After a stall cancel, the engine must wind down within this window;
+/// past it the task is aborted so the addon is never held hostage.
+const GRACE_TIMEOUT: Duration = Duration::from_secs(180);
+
 /// Where the NZB document comes from.
 #[derive(Debug, Clone)]
 pub enum NzbSource {
@@ -521,6 +528,8 @@ async fn download_phase(
     let mut ticker = tokio::time::interval(STATUS_TICK);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+    let mut last_progress = Instant::now();
+    let mut stalled = false;
     loop {
         tokio::select! {
             event = rx.recv() => match event {
@@ -530,6 +539,7 @@ async fn download_phase(
                     // cancel/finalize, so track progress from events.
                     bytes_done = bytes_done.saturating_add(bytes);
                     segments_done += 1;
+                    last_progress = Instant::now();
                 }
                 Some(ProgressEvent::ArticleError { filename, segment, error }) => {
                     tracing::warn!(filename, segment, "article error: {error}");
@@ -546,6 +556,18 @@ async fn download_phase(
                     status, bytes_done, segments_done, total_bytes, total_segments,
                     &mut speed, started,
                 );
+                // Watchdog: reads inside the engine carry their own
+                // timeouts, but anything that still wedges past this
+                // window is dead, not slow — cancel with a reason.
+                if last_progress.elapsed() > STALL_TIMEOUT {
+                    stalled = true;
+                    tracing::error!(
+                        since_progress_s = last_progress.elapsed().as_secs(),
+                        "download stalled — cancelling job"
+                    );
+                    cancel_flag.store(true, Ordering::SeqCst);
+                    break;
+                }
             }
             _ = cancel_rx.changed() => {
                 // Signal arrived; the engine observes the shared flag and
@@ -566,13 +588,28 @@ async fn download_phase(
         started,
     );
 
-    // Flatten `Result<Result<(), CoreError>, JoinError>` into a message.
-    let run_result: Result<(), String> = match runner.await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => Err(e.to_string()),
-        Err(e) => Err(format!("join: {e}")),
-    };
+    // Flatten `Result<Result<(), CoreError>, JoinError>` into a message,
+    // bounded by a grace window so a wedged engine cannot hold us forever.
+    let mut runner = runner;
+    let run_result: Result<(), String> =
+        match tokio::time::timeout(GRACE_TIMEOUT, &mut runner).await {
+            Ok(Ok(Ok(()))) => Ok(()),
+            Ok(Ok(Err(e))) => Err(e.to_string()),
+            Ok(Err(e)) => Err(format!("join: {e}")),
+            Err(_) => {
+                runner.abort();
+                Err("engine ignored cancel for 3 minutes — task aborted".to_string())
+            }
+        };
     let download_ok = matches!(finished, Some((completed, failed)) if failed == 0 && completed > 0);
+
+    if stalled {
+        return Ok(Outcome::Failed(
+            "download stalled — no segment completed for 10 minutes (dead connections?); \
+the job stays resumable from Downloads"
+                .to_string(),
+        ));
+    }
 
     if cancel_flag.load(Ordering::SeqCst) && !download_ok {
         // Leave the job queued so `resume` can pick it up at the article level.
