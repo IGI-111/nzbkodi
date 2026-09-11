@@ -175,8 +175,20 @@ def container_update(url: str) -> None:
     xbmc.executebuiltin('Container.Update("%s")' % url)
 
 
-def end_directory(handle: int) -> None:
+def end_directory(handle: int, view: int | None = None) -> None:
     xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+    if view is not None:
+        # Skins persist their last view mode per path; a directory we once
+        # rendered with a media content type keeps showing thumbs/cubes even
+        # after switching to `files`. Assert a plain list view explicitly.
+        import xbmc
+
+        xbmc.executebuiltin("Container.SetViewMode(%d)" % view)
+
+
+# View mode 51 = "List" in Estuary (the Kodi default skin). Skins without a
+# view with that id ignore the builtin silently.
+LIST_VIEW = 51
 
 
 # -- progress ------------------------------------------------------------

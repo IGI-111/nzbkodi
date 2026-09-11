@@ -264,7 +264,7 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
     # "files" content: a plain list view, one row per release, full name +
     # metadata visible — no poster "cubes".
     kodiui.set_content(handle, "files")
-    kodiui.end_directory(handle)
+    kodiui.end_directory(handle, view=kodiui.LIST_VIEW)
 
 
 def _search_hits(kind: str, title: str, query, season, episode, tmdb):
