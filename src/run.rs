@@ -621,6 +621,14 @@ the job stays resumable from Downloads"
     }
 
     match (&finished, run_result) {
+        // Nothing downloaded at all: every article answered 430/423 — the
+        // release is gone from the server (retention expiry or removal).
+        // Retrying is pointless; say so plainly.
+        (Some((0, failed)), Ok(())) if *failed > 0 => Ok(Outcome::Failed(
+            "release not available on the server — all articles were reported missing \
+             (expired past retention or removed); pick a different release"
+                .to_string(),
+        )),
         (Some((_, failed)), Ok(())) if *failed > 0 => {
             let message = queue
                 .get_job(job_id)
