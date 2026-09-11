@@ -69,13 +69,32 @@ def parse_quality(title: str) -> str:
     return " ".join(parts)
 
 
-def hit_passes(hit: dict, index_filter: str | None, min_size_gb) -> bool:
-    """Release-list filter predicate: indexer name + minimum size in GB."""
+def resolution(title: str) -> str:
+    """Just the resolution tag from a release name: `2160p`|`1080p`|`720p`,
+    or "" when absent."""
+    for label, rx in _RES:
+        if rx.search(title or ""):
+            return label
+    return ""
+
+
+def hit_passes(hit: dict, index_filter: str | None = None,
+               size_bucket: tuple | None = None, res_filter: str | None = None) -> bool:
+    """Release filter predicate. `size_bucket` is (min_gb, max_gb) with either
+    side optional; `res_filter` is a resolution tag or "" for "no tag"."""
     if index_filter and index_filter not in (hit.get("indexers") or []):
         return False
-    if min_size_gb and int(hit.get("size") or 0) < int(min_size_gb) * 1024**3:
+    if size_bucket:
+        lo, hi = size_bucket
+        gb = int(hit.get("size") or 0) / 1024**3
+        if lo is not None and gb < lo:
+            return False
+        if hi is not None and gb >= hi:
+            return False
+    if res_filter is not None and resolution(hit.get("title") or "") != res_filter:
         return False
     return True
+
 
 
 def indexer_name(url: str) -> str:

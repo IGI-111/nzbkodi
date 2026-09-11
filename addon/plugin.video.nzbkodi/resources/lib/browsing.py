@@ -74,7 +74,7 @@ def show_popular_movies(handle: int) -> None:
                 "%s (%s)" % (movie["title"], movie["year"]) if movie["year"] else movie["title"],
                 route(
                     "releases", kind="movie", tmdb=movie["id"], title=movie["title"],
-                    poster=movie["poster"],
+                    poster=movie["poster"], year=movie.get("year") or "",
                 ),
                 art={"poster": movie["poster"]} if movie["poster"] else None,
                 info={"plot": movie["overview"]},
@@ -103,7 +103,7 @@ def do_movies_search(handle: int, query: str | None = None) -> None:
                 "%s (%s)" % (movie["title"], movie["year"]) if movie["year"] else movie["title"],
                 route(
                     "releases", kind="movie", tmdb=movie["id"], title=movie["title"],
-                    poster=movie["poster"],
+                    poster=movie["poster"], year=movie.get("year") or "",
                 ),
                 art={"poster": movie["poster"]} if movie["poster"] else None,
                 info={"plot": movie["overview"]},
@@ -221,26 +221,29 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
 
 def releases_picker(kind: str, title: str, query: str | None = None,
                     season: int | None = None, episode: int | None = None,
-                    tmdb: int | None = None) -> None:
+                    tmdb: int | None = None, year: str | None = None) -> None:
     """Script-style: search all indexers, then let the user pick a release
     in a skin-themed two-line dialog; picking one starts the download."""
     from . import picking
 
     with kodiui.busy("Searching indexers…"):
-        found = _search_hits(kind, title, query, season, episode, tmdb)
+        found = _search_hits(kind, title, query, season, episode, tmdb, year)
     if found is None:
         return
-    _, hits = found
+    engine, hits = found
 
     index_filter = None
-    min_size_gb = None
+    size_bucket = None
+    res_filter = None
     while True:
-        shown = [h for h in hits if util.hit_passes(h, index_filter, min_size_gb)]
-        shown.sort(key=lambda h: int(h.get("size") or 0), reverse=True)
+        shown = [h for h in hits
+                 if util.hit_passes(h, index_filter, size_bucket, res_filter)]
+        shown.sort(key=lambda h: int(h.get("post_date") or 0), reverse=True)
 
-        filter_line = "[B]Filter: %s / %s[/B]" % (
+        filter_line = "[B]Filter: %s / %s / %s[/B]" % (
             index_filter or "any indexer",
-            ("≥ %d GB" % int(min_size_gb)) if min_size_gb else "any size",
+            _bucket_label(size_bucket),
+            (res_filter if res_filter else ("no res tag" if res_filter == "" else "any res")),
         )
         rows = [(filter_line, "%d of %d releases match" % (len(shown), len(hits)))]
         if not shown:
@@ -252,9 +255,9 @@ def releases_picker(kind: str, title: str, query: str | None = None,
         if choice < 0:
             return
         if choice == 0:
-            picked = _filter_dialog(hits, index_filter, min_size_gb)
+            picked = _filter_dialog(engine, index_filter, size_bucket, res_filter)
             if picked is not None:
-                index_filter, min_size_gb = picked
+                index_filter, size_bucket, res_filter = picked
             continue
         if not shown:
             continue
@@ -263,24 +266,51 @@ def releases_picker(kind: str, title: str, query: str | None = None,
         return
 
 
-_SIZE_STEPS = [("any size", None), ("≥ 1 GB", 1), ("≥ 4 GB", 4), ("≥ 8 GB", 8),
-               ("≥ 16 GB", 16), ("≥ 32 GB", 32)]
+_SIZE_BUCKETS = [
+    ("any size", None),
+    ("< 1 GB", (None, 1)),
+    ("1 – 4 GB", (1, 4)),
+    ("4 – 8 GB", (4, 8)),
+    ("8 – 16 GB", (8, 16)),
+    ("16 – 32 GB", (16, 32)),
+    ("> 32 GB", (32, None)),
+]
+
+_RES_CHOICES = [
+    ("any", None),
+    ("2160p / 4K", "2160p"),
+    ("1080p", "1080p"),
+    ("720p", "720p"),
+    ("no resolution tag (SD?)", ""),
+]
 
 
-def _filter_dialog(hits: list, index_filter, min_size_gb):
-    """Two quick pickers; returns (index_filter, min_size_gb) or None."""
-    indexers = sorted({i for h in hits for i in (h.get("indexers") or [])})
+def _bucket_label(bucket) -> str:
+    for label, value in _SIZE_BUCKETS:
+        if value == bucket:
+            return label
+    return "any size"
+
+
+def _filter_dialog(engine, index_filter, size_bucket, res_filter):
+    """Three pickers (indexer, size bucket, resolution); cancelling any one
+    leaves the filters unchanged. Returns (index, size, res) tuple or None."""
+    indexers = sorted(engine.indexer_names())
     options = ["any indexer"] + indexers
     preselect = (indexers.index(index_filter) + 1) if index_filter in indexers else 0
     idx_choice = kodiui.select("Indexer", options, preselect=preselect)
     if idx_choice < 0:
         return None
-    size_choice = kodiui.select("Minimum size", [s for s, _ in _SIZE_STEPS])
+    size_choice = kodiui.select("Size", [s for s, _ in _SIZE_BUCKETS])
     if size_choice < 0:
+        return None
+    res_choice = kodiui.select("Resolution", [r for r, _ in _RES_CHOICES])
+    if res_choice < 0:
         return None
     return (
         indexers[idx_choice - 1] if idx_choice > 0 else None,
-        _SIZE_STEPS[size_choice][1],
+        _SIZE_BUCKETS[size_choice][1],
+        _RES_CHOICES[res_choice][1],
     )
 
 
@@ -293,7 +323,7 @@ def _release_row(hit: dict):
     return (hit.get("title") or "release", label2)
 
 
-def _search_hits(kind: str, title: str, query, season, episode, tmdb):
+def _search_hits(kind: str, title: str, query, season, episode, tmdb, year=None):
     """Run the indexer search; returns (engine, hits) or None on failure."""
     try:
         engine = kodiui.build_engine()
@@ -303,7 +333,7 @@ def _search_hits(kind: str, title: str, query, season, episode, tmdb):
             hits = engine.search_tv(query or title, int(season or 0), int(episode or 0))
         elif kind == "movie":
             imdb = kodiui.build_tmdb().movie_imdb_id(int(tmdb))
-            hits = engine.search_movie(imdb)
+            hits = engine.search_movie(imdb, title=title or "", year=int(year or 0))
         else:
             raise EngineError("unknown search kind %r" % kind)
     except (EngineError, TmdbError) as exc:

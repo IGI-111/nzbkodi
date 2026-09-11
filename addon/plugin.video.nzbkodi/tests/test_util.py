@@ -70,12 +70,27 @@ def test_parse_quality():
 
 
 def test_hit_passes():
-    hit = {"size": 5 * 1024**3, "indexers": ["nzbgeek", "ninjacentral"]}
-    assert util.hit_passes(hit, None, None)
-    assert util.hit_passes(hit, "nzbgeek", "4")
-    assert not util.hit_passes(hit, "other", None)
-    assert not util.hit_passes(hit, "nzbgeek", "8")
-    assert not util.hit_passes({"size": 0, "indexers": []}, "nzbgeek", None)
+    hit = {"size": 5 * 1024**3, "indexers": ["nzbgeek.info", "ninjacentral.co.za"],
+           "title": "Movie.2020.1080p.BluRay"}
+    assert util.hit_passes(hit)
+    assert util.hit_passes(hit, "nzbgeek.info", (4, 8), "1080p")
+    assert not util.hit_passes(hit, "other", None, None)
+    assert not util.hit_passes(hit, "nzbgeek.info", (8, 16), None)
+    assert not util.hit_passes(hit, "nzbgeek.info", (1, 4), None)
+    assert not util.hit_passes(hit, "nzbgeek.info", None, "2160p")
+    # open-ended and closed buckets
+    assert util.hit_passes(hit, size_bucket=(32, None)) is False
+    assert util.hit_passes({"size": 0}, index_filter="nzbgeek.info") is False
+    # resolution of untagged release
+    untagged = {"title": "obfuscated-hash-name", "indexers": ["nzbgeek.info"], "size": 0}
+    assert util.hit_passes(untagged, res_filter="")
+    assert not util.hit_passes(untagged, res_filter="720p")
+
+
+def test_resolution():
+    assert util.resolution("Ghost.In.The.Shell.1995.1080p.BluRay") == "1080p"
+    assert util.resolution("Movie.UHD.2160p.Remux") == "2160p"
+    assert util.resolution("stuff") == ""
 
 
 def run():

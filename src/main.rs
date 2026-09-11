@@ -65,6 +65,13 @@ enum Command {
         /// IMDB id for a movie search, e.g. tt0058935 (exclusive with --query).
         #[arg(long)]
         imdb: Option<String>,
+        /// Movie title, used as a text-search fallback on indexers that
+        /// don't answer IMDB queries (optional, with --imdb).
+        #[arg(long, requires = "imdb")]
+        title: Option<String>,
+        /// Release year, appended to the fallback text query (with --title).
+        #[arg(long, requires = "title")]
+        year: Option<u32>,
         /// Season for a TV search (with --query + --episode).
         #[arg(long, requires = "query", requires = "episode")]
         season: Option<u32>,
@@ -118,6 +125,8 @@ async fn main() -> ExitCode {
             config,
             query,
             imdb,
+            title,
+            year,
             season,
             episode,
             limit,
@@ -126,7 +135,7 @@ async fn main() -> ExitCode {
             use run::SearchKind;
             let kind = match (query, imdb, season, episode) {
                 (Some(q), None, None, None) => SearchKind::Text(q),
-                (None, Some(imdb), None, None) => SearchKind::MovieImdb(imdb),
+                (None, Some(imdb), None, None) => SearchKind::MovieImdb { imdb, title, year },
                 (Some(q), None, Some(season), Some(episode)) => SearchKind::Tv {
                     query: q,
                     season,

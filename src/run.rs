@@ -251,8 +251,13 @@ pub async fn cmd_resume(
 pub enum SearchKind {
     /// Free-text query.
     Text(String),
-    /// Movie by IMDB id (e.g. `tt0058935`).
-    MovieImdb(String),
+    /// Movie by IMDB id (e.g. `tt0058935`). Indexers that don't answer
+    /// IMDB queries are retried with a `title year` text query.
+    MovieImdb {
+        imdb: String,
+        title: Option<String>,
+        year: Option<u32>,
+    },
     /// TV by title + season + episode.
     Tv {
         query: String,
@@ -263,7 +268,7 @@ pub enum SearchKind {
 
 /// Build a [`SearchQuery`] from CLI arguments, validating combinations.
 pub fn build_search_query(
-    kind: SearchKind,
+    kind: &SearchKind,
     limit: u32,
     max_age_days: Option<u32>,
 ) -> Result<SearchQuery> {
@@ -275,14 +280,14 @@ pub fn build_search_query(
             bail!("--max-age-days must be positive");
         }
     }
-    let mut query = match kind {
-        SearchKind::Text(q) => SearchQuery::text(q),
-        SearchKind::MovieImdb(imdb) => SearchQuery::movie(imdb),
+    let mut query = match &kind {
+        SearchKind::Text(q) => SearchQuery::text(q.clone()),
+        SearchKind::MovieImdb { imdb, .. } => SearchQuery::movie(imdb.clone()),
         SearchKind::Tv {
             query,
             season,
             episode,
-        } => SearchQuery::tv(query, season, episode),
+        } => SearchQuery::tv(query.clone(), *season, *episode),
     };
     query.limit = limit;
     query.max_age_days = max_age_days;
@@ -355,7 +360,7 @@ pub async fn cmd_search(
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
         .init();
-    let query = build_search_query(kind, limit, max_age_days)?;
+    let query = build_search_query(&kind, limit, max_age_days)?;
 
     let mut aggregator = SearchAggregator::new(30);
     for indexer in &cfg.indexers {
@@ -365,15 +370,73 @@ pub async fn cmd_search(
     let now_unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let hits: Vec<SearchHit> = aggregator
+    let mut hits: Vec<SearchHit> = aggregator
         .search(&query)
         .await
         .into_iter()
         .map(|aggregated| search_hit(&aggregated.result, aggregated.sources, now_unix))
         .collect();
 
+    // Some indexers (notably ninjacentral) return zero results for IMDB
+    // queries. Retry those with a plain `title [year]` text search.
+    if let SearchKind::MovieImdb {
+        title: Some(title),
+        year,
+        ..
+    } = &kind
+    {
+        let contributed: std::collections::HashSet<String> = hits
+            .iter()
+            .flat_map(|hit| hit.indexers.iter().cloned())
+            .collect();
+        let mut fallback_query = title.clone();
+        if let Some(year) = year {
+            fallback_query = format!("{fallback_query} {year}");
+        }
+        let mut fallback = SearchQuery::text(fallback_query.clone());
+        fallback.limit = limit;
+        fallback.max_age_days = max_age_days;
+        let known: std::collections::HashSet<String> = hits
+            .iter()
+            .map(|hit| normalize_title_for_dedup(&hit.title))
+            .collect();
+        for indexer in &cfg.indexers {
+            if contributed.contains(&indexer.name) {
+                continue;
+            }
+            tracing::info!(indexer = %indexer.name, "imdb query empty, text fallback");
+            let client = NewznabClient::new(indexer.clone());
+            match client.search(&fallback).await {
+                Ok(results) => {
+                    let mut added = 0usize;
+                    for result in results {
+                        if known.contains(&normalize_title_for_dedup(&result.title)) {
+                            continue;
+                        }
+                        hits.push(search_hit(&result, vec![indexer.name.clone()], now_unix));
+                        added += 1;
+                    }
+                    tracing::info!(indexer = %indexer.name, count = added, "text fallback hits");
+                }
+                Err(e) => {
+                    tracing::warn!(indexer = %indexer.name, "text fallback failed: {e:#}");
+                }
+            }
+        }
+    }
+
     println!("{}", serde_json::to_string_pretty(&hits)?);
     Ok(ExitCode::SUCCESS)
+}
+
+/// Same light normalization the aggregator uses for dedup: lowercase,
+/// collapse whitespace.
+fn normalize_title_for_dedup(title: &str) -> String {
+    title
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // ---------------------------------------------------------------------------
@@ -978,7 +1041,7 @@ mod tests {
     #[test]
     fn search_query_text() {
         let q =
-            build_search_query(SearchKind::Text("dune part two".into()), 50, None).expect("query");
+            build_search_query(&SearchKind::Text("dune part two".into()), 50, None).expect("query");
         assert_eq!(q.q.as_deref(), Some("dune part two"));
         assert_eq!(q.limit, 50);
         assert_eq!(q.max_age_days, None);
@@ -987,7 +1050,7 @@ mod tests {
     #[test]
     fn search_query_tv() {
         let q = build_search_query(
-            SearchKind::Tv {
+            &SearchKind::Tv {
                 query: "severance".into(),
                 season: 2,
                 episode: 4,
@@ -1002,17 +1065,34 @@ mod tests {
     }
 
     #[test]
+    fn title_dedup_normalization() {
+        assert_eq!(
+            normalize_title_for_dedup(" The  Matrix  1999 "),
+            "the matrix 1999"
+        );
+        assert_eq!(normalize_title_for_dedup("X"), "x");
+    }
+
+    #[test]
     fn search_query_movie_imdb() {
-        let q = build_search_query(SearchKind::MovieImdb("tt0058935".into()), 100, None)
-            .expect("query");
+        let q = build_search_query(
+            &SearchKind::MovieImdb {
+                imdb: "tt0058935".into(),
+                title: None,
+                year: None,
+            },
+            100,
+            None,
+        )
+        .expect("query");
         assert_eq!(q.imdb_id.as_deref(), Some("tt0058935"));
     }
 
     #[test]
     fn search_query_limit_and_age_bounds() {
-        assert!(build_search_query(SearchKind::Text("x".into()), 0, None).is_err());
-        assert!(build_search_query(SearchKind::Text("x".into()), 501, None).is_err());
-        assert!(build_search_query(SearchKind::Text("x".into()), 100, Some(0)).is_err());
+        assert!(build_search_query(&SearchKind::Text("x".into()), 0, None).is_err());
+        assert!(build_search_query(&SearchKind::Text("x".into()), 501, None).is_err());
+        assert!(build_search_query(&SearchKind::Text("x".into()), 100, Some(0)).is_err());
     }
 
     #[test]

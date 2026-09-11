@@ -107,8 +107,14 @@ class Engine:
     def search_text(self, query: str, limit: int = 100) -> list:
         return self._search(["--query", query, "--limit", str(limit)])
 
-    def search_movie(self, imdb_id: str, limit: int = 100) -> list:
-        return self._search(["--imdb", imdb_id, "--limit", str(limit)])
+    def search_movie(self, imdb_id: str, title: str = "", year: int = 0,
+                     limit: int = 100) -> list:
+        args = ["--imdb", imdb_id, "--limit", str(limit)]
+        if title:
+            args += ["--title", title]
+            if year:
+                args += ["--year", str(year)]
+        return self._search(args)
 
     def search_tv(self, query: str, season: int, episode: int, limit: int = 100) -> list:
         return self._search(
@@ -136,6 +142,16 @@ class Engine:
         except json.JSONDecodeError as exc:
             raise EngineError("bad search output: %s" % exc) from exc
         return hits or []
+
+    def indexer_names(self) -> list:
+        """Display names of the indexers in the engine config (or [] if the
+        config isn't written yet)."""
+        try:
+            with open(self.config_path, encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return []
+        return [i.get("name") for i in cfg.get("indexers", []) if i.get("name")]
 
     # -- downloads -------------------------------------------------------
 
