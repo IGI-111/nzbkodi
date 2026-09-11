@@ -79,6 +79,17 @@ def route(handle: int, params: dict) -> None:
             episode=params.get("episode"),
             tmdb=params.get("tmdb"),
             poster=params.get("poster"),
+            index_filter=params.get("fi"),
+            min_size_gb=params.get("fs"),
+        )
+    elif action == "release_filter":
+        browsing.release_filter(
+            kind=params.get("kind", "text"),
+            title=params.get("title", ""),
+            query=params.get("query"),
+            season=params.get("season"),
+            episode=params.get("episode"),
+            tmdb=params.get("tmdb"),
         )
     elif action == "pick":
         picking.pick_release(

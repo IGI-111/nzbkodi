@@ -217,9 +217,58 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
 
 def show_releases(handle: int, kind: str, title: str, query: str | None = None,
                   season: int | None = None, episode: int | None = None,
-                  tmdb: int | None = None, poster: str | None = None) -> None:
+                  tmdb: int | None = None, poster: str | None = None,
+                  index_filter: str | None = None, min_size_gb: int | None = None) -> None:
     """Search all indexers and list releases; picking one starts it."""
 
+    hits = _search_hits(kind, title, query, season, episode, tmdb)
+    if hits is None:
+        kodiui.end_directory(handle)
+        return
+    _, hits = hits
+
+    base = dict(kind=kind, title=title, query=query, season=season,
+                episode=episode, tmdb=tmdb)
+
+    if len(hits) > 3 and not (index_filter or min_size_gb):
+        kodiui.add_item(handle, "[B]Filter releases…[/B]", route("release_filter", **base),
+                        is_folder=False)
+
+    shown = [h for h in hits if util.hit_passes(h, index_filter, min_size_gb)]
+    shown.sort(key=lambda h: int(h.get("size") or 0), reverse=True)
+
+    if not shown:
+        kodiui.notify("No releases match that filter")
+        kodiui.add_item(handle, "[B]Clear filter[/B]", route("releases", **base),
+                        is_folder=False)
+
+    for hit in shown:
+        sources = ",".join(hit.get("indexers") or [])
+        quality = util.parse_quality(hit.get("title") or "")
+        bits = ["%s" % util.format_size(hit.get("size", 0)),
+                util.format_age(int(hit.get("age_days") or 0)), sources]
+        label2 = ("[B]%s[/B] · " % quality if quality else "") + " · ".join(bits)
+        kodiui.add_item(
+            handle,
+            hit.get("title") or "release",
+            route(
+                "pick",
+                nzb=hit.get("nzb_url", ""),
+                title=title,
+                release=hit.get("title", ""),
+            ),
+            label2=label2,
+            info={"title": hit.get("title") or "", "plot": label2},
+            is_folder=False,
+        )
+    # "files" content: a plain list view, one row per release, full name +
+    # metadata visible — no poster "cubes".
+    kodiui.set_content(handle, "files")
+    kodiui.end_directory(handle)
+
+
+def _search_hits(kind: str, title: str, query, season, episode, tmdb):
+    """Run the indexer search; returns (engine, hits) or None on failure."""
     try:
         engine = kodiui.build_engine()
         if kind == "text":
@@ -233,9 +282,7 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
             raise EngineError("unknown search kind %r" % kind)
     except (EngineError, TmdbError) as exc:
         kodiui.notify(str(exc), error=True)
-        kodiui.end_directory(handle)
-        return
-
+        return None
     if not hits:
         detail = getattr(engine, "last_stderr", "")
         if detail:
@@ -243,39 +290,37 @@ def show_releases(handle: int, kind: str, title: str, query: str | None = None,
             kodiui.notify("No results — indexer errors (see kodi.log)", error=True)
         else:
             kodiui.notify("No results on your indexers")
+        return None
+    return engine, hits
 
-    for hit in hits:
-        sources = ",".join(hit.get("indexers") or [])
-        label2 = "%s · %s · %s" % (
-            util.format_size(hit.get("size", 0)),
-            util.format_age(int(hit.get("age_days") or 0)),
-            sources,
-        )
-        art = {k: poster for k in ("poster", "fanart")} if poster else None
-        info = {
-            "title": hit.get("title") or "",
-            "size": int(hit.get("size") or 0),
-            "dateadded": util.iso_datetime(int(hit.get("post_date") or 0)),
-            "plot": label2,
-        }
-        kodiui.add_item(
-            handle,
-            hit.get("title") or "release",
-            route(
-                "pick",
-                nzb=hit.get("nzb_url", ""),
-                title=title,
-                release=hit.get("title", ""),
-            ),
-            label2=label2,
-            art=art,
-            info=info,
-            is_folder=False,
-        )
-    # "movies" content so skins render media layouts: poster thumbs, fanart
-    # backdrop, and the label2 column (size · age · indexers) in media views.
-    kodiui.set_content(handle, "movies")
-    kodiui.end_directory(handle)
+
+_SIZE_STEPS = [("any size", None), (">= 1 GB", 1), (">= 4 GB", 4), (">= 8 GB", 8),
+               (">= 16 GB", 16), (">= 32 GB", 32)]
+
+
+def release_filter(kind: str, title: str, query: str | None = None,
+                   season: int | None = None, episode: int | None = None,
+                   tmdb: int | None = None) -> None:
+    """Script-style action: re-search, let the user pick indexer + min size,
+    then navigate to a filtered `releases` listing."""
+    found = _search_hits(kind, title, query, season, episode, tmdb)
+    if found is None:
+        return
+    _, hits = found
+
+    indexers = sorted({i for h in hits for i in (h.get("indexers") or [])})
+    idx_choice = kodiui.select("Indexer", ["any indexer"] + indexers)
+    if idx_choice < 0:
+        return
+    size_choice = kodiui.select("Minimum size", [s for s, _ in _SIZE_STEPS])
+    if size_choice < 0:
+        return
+
+    index_filter = indexers[idx_choice - 1] if idx_choice > 0 else None
+    min_size_gb = _SIZE_STEPS[size_choice][1]
+    kodiui.container_update(route(
+        "releases", kind=kind, title=title, query=query, season=season,
+        episode=episode, tmdb=tmdb, fi=index_filter, fs=min_size_gb))
 
 
 # -- downloads ------------------------------------------------------------

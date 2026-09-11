@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from urllib.parse import urlparse
 
@@ -32,6 +33,49 @@ def iso_datetime(unix: int) -> str:
     import time
 
     return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(unix or 0))
+
+
+_RES = [
+    ("2160p", re.compile(r"(?i)(?<![\w])(2160p|4k|uhd)(?![\w])")),
+    ("1080p", re.compile(r"(?i)(?<![\w])1080p?(?![\w])")),
+    ("720p", re.compile(r"(?i)(?<![\w])720p?(?![\w])")),
+]
+_SRC = [
+    ("REMUX", re.compile(r"(?i)(?<![\w])remux(?![\w])")),
+    ("BluRay", re.compile(r"(?i)(?<![\w])(blu[- ]?ray|bdrip|brrip|bd)(?![\w])")),
+    ("WEB-DL", re.compile(r"(?i)(?<![\w])web[- ]?dl(?![\w])")),
+    ("WEBRip", re.compile(r"(?i)(?<![\w])web[- ]?rip(?![\w])")),
+    ("HDTV", re.compile(r"(?i)(?<![\w])hdtv(?![\w])")),
+]
+_HDR = re.compile(r"(?i)(?<![\w])(hdr10\+?|dolby[. ]?vision|dv|hdr)(?![\w])")
+
+
+def parse_quality(title: str) -> str:
+    """Extract a short quality badge from a release name, e.g.
+    `2160p REMUX HDR` or `1080p BluRay`; empty string when nothing matches."""
+    if not title:
+        return ""
+    parts = []
+    for label, rx in _RES:
+        if rx.search(title):
+            parts.append(label)
+            break
+    for label, rx in _SRC:
+        if rx.search(title):
+            parts.append(label)
+            break
+    if _HDR.search(title):
+        parts.append("HDR")
+    return " ".join(parts)
+
+
+def hit_passes(hit: dict, index_filter: str | None, min_size_gb) -> bool:
+    """Release-list filter predicate: indexer name + minimum size in GB."""
+    if index_filter and index_filter not in (hit.get("indexers") or []):
+        return False
+    if min_size_gb and int(hit.get("size") or 0) < int(min_size_gb) * 1024**3:
+        return False
+    return True
 
 
 def indexer_name(url: str) -> str:

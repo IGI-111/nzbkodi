@@ -56,6 +56,28 @@ def test_pid_alive_current():
     assert util.pid_alive(0) is False
 
 
+def test_parse_quality():
+    assert util.parse_quality("") == ""
+    assert util.parse_quality(None) == ""
+    assert util.parse_quality("Ghost.In.the.Shell.1995.1080p.BluRay.Opus2.0.AV1-Tasokare") == (
+        "1080p BluRay"
+    )
+    assert util.parse_quality("The.Matrix.1999.2160p.UHD.BluRay.REMUX.DV.HDR") == (
+        "2160p REMUX HDR"
+    )
+    assert util.parse_quality("Some.Show.S01E02.720p.WEB-DL") == "720p WEB-DL"
+    assert util.parse_quality("Old.Movie.XviD-LOL") == ""
+
+
+def test_hit_passes():
+    hit = {"size": 5 * 1024**3, "indexers": ["nzbgeek", "ninjacentral"]}
+    assert util.hit_passes(hit, None, None)
+    assert util.hit_passes(hit, "nzbgeek", "4")
+    assert not util.hit_passes(hit, "other", None)
+    assert not util.hit_passes(hit, "nzbgeek", "8")
+    assert not util.hit_passes({"size": 0, "indexers": []}, "nzbgeek", None)
+
+
 def run():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

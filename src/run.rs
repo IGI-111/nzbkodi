@@ -475,7 +475,20 @@ async fn run_download_and_post(
     let outcome = download_phase(cfg, queue, job_id, status, cancel_flag, cancel_rx).await?;
     let outcome = match outcome {
         Outcome::Completed => postprocess_phase(queue, job_id, status).await?,
+        // Any download-phase failure (all-missing release, stall watchdog,
+        // engine error) must reach the status file, or the addon polls a
+        // frozen "downloading" job at 0% forever — indistinguishable from a
+        // hang from the user's seat.
         Outcome::Failed(message) => {
+            status.update(|s| {
+                if !matches!(s.stage, Stage::Failed | Stage::Done | Stage::Cancelled) {
+                    s.stage = Stage::Failed;
+                    s.error = Some(message.clone());
+                    s.speed_bps = 0;
+                    s.verify_percent = None;
+                }
+            });
+            status.flush()?;
             tracing::error!(job_id, "job failed: {message}");
             Outcome::Failed(message)
         }

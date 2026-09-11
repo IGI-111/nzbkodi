@@ -115,6 +115,13 @@ def input_dialog(prompt: str) -> str:
     return xbmcgui.Dialog().input(prompt, type=xbmcgui.INPUT_ALPHANUM) or ""
 
 
+def select(heading: str, options: list) -> int:
+    """Single-choice picker; returns the chosen index or -1 if cancelled."""
+    import xbmcgui
+
+    return xbmcgui.Dialog().select(heading, options)
+
+
 def confirm(prompt: str) -> bool:
     return xbmcgui.Dialog().yesno("nzbkodi", prompt)
 
@@ -155,8 +162,8 @@ def add_item(handle: int, label: str, url: str, label2: str = "", art: dict | No
 
 
 def set_content(handle: int, content: str) -> None:
-    """Set the directory content type so skins use media layouts (posters,
-    two-line rows, label2 columns) instead of the plain file list."""
+    """Set the directory content type. `movies` gives poster/fanart media
+    layouts; `files` gives a plain list (what we want for release rows)."""
     xbmcplugin.setContent(handle, content)
 
 
