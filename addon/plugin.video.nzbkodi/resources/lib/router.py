@@ -70,20 +70,8 @@ def route(handle: int, params: dict) -> None:
             params.get("title", ""),
         )
     elif action == "releases":
-        browsing.show_releases(
-            handle,
-            kind=params.get("kind", "text"),
-            title=params.get("title", ""),
-            query=params.get("query"),
-            season=params.get("season"),
-            episode=params.get("episode"),
-            tmdb=params.get("tmdb"),
-            poster=params.get("poster"),
-            index_filter=params.get("fi"),
-            min_size_gb=params.get("fs"),
-        )
-    elif action == "release_filter":
-        browsing.release_filter(
+        # Script-style: opens the release picker dialog directly.
+        browsing.releases_picker(
             kind=params.get("kind", "text"),
             title=params.get("title", ""),
             query=params.get("query"),

@@ -115,11 +115,20 @@ def input_dialog(prompt: str) -> str:
     return xbmcgui.Dialog().input(prompt, type=xbmcgui.INPUT_ALPHANUM) or ""
 
 
-def select(heading: str, options: list) -> int:
+def select_listitems(heading: str, rows: list) -> int:
+    """Skin-themed two-line picker. `rows` is a list of (label, label2);
+    returns the chosen index or -1 if cancelled."""
+    import xbmcgui
+
+    items = [xbmcgui.ListItem(label=label, label2=label2) for label, label2 in rows]
+    return xbmcgui.Dialog().select(heading, items, useDetails=True)
+
+
+def select(heading: str, options: list, preselect: int = -1) -> int:
     """Single-choice picker; returns the chosen index or -1 if cancelled."""
     import xbmcgui
 
-    return xbmcgui.Dialog().select(heading, options)
+    return xbmcgui.Dialog().select(heading, options, preselect=preselect)
 
 
 def confirm(prompt: str) -> bool:
@@ -175,20 +184,28 @@ def container_update(url: str) -> None:
     xbmc.executebuiltin('Container.Update("%s")' % url)
 
 
-def end_directory(handle: int, view: int | None = None) -> None:
+def end_directory(handle: int) -> None:
     xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
-    if view is not None:
-        # Skins persist their last view mode per path; a directory we once
-        # rendered with a media content type keeps showing thumbs/cubes even
-        # after switching to `files`. Assert a plain list view explicitly.
-        import xbmc
-
-        xbmc.executebuiltin("Container.SetViewMode(%d)" % view)
 
 
-# View mode 51 = "List" in Estuary (the Kodi default skin). Skins without a
-# view with that id ignore the builtin silently.
-LIST_VIEW = 51
+class _Busy:
+    """Minimal 'working…' dialog wrapper (search can take a few seconds)."""
+
+    def __enter__(self):
+        import xbmcgui
+
+        self._dlg = xbmcgui.DialogProgress()
+        self._dlg.create("nzbkodi", self._message)
+        return self._dlg
+
+    def __exit__(self, *_):
+        self._dlg.close()
+
+
+def busy(message: str) -> _Busy:
+    b = _Busy()
+    b._message = message
+    return b
 
 
 # -- progress ------------------------------------------------------------

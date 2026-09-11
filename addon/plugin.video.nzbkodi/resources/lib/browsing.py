@@ -42,7 +42,8 @@ def show_root(handle: int) -> None:
 
 def do_search(handle: int, query: str | None = None) -> None:
     """Bare invocation: ask (script context), then redirect to the query URL.
-    With a query: render the release listing — re-fetch-safe, no dialogs."""
+    With a query: open the release picker dialog (re-fetch-safe, no dialogs
+    inside Kodi listings)."""
     if not query:
         query = kodiui.input_dialog("Search releases")
         if not query:
@@ -50,7 +51,7 @@ def do_search(handle: int, query: str | None = None) -> None:
         kodiui.container_update(route("search", query=query))
         return
     history.record(kodiui.data_dir(), "releases", query)
-    show_releases(handle, kind="text", query=query, title=query)
+    releases_picker(kind="text", query=query, title=query)
 
 
 # -- movies ---------------------------------------------------------------
@@ -77,6 +78,7 @@ def show_popular_movies(handle: int) -> None:
                 ),
                 art={"poster": movie["poster"]} if movie["poster"] else None,
                 info={"plot": movie["overview"]},
+                is_folder=False,
             )
     except TmdbError as exc:
         kodiui.log("tmdb error: %s" % exc)
@@ -105,6 +107,7 @@ def do_movies_search(handle: int, query: str | None = None) -> None:
                 ),
                 art={"poster": movie["poster"]} if movie["poster"] else None,
                 info={"plot": movie["overview"]},
+                is_folder=False,
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
@@ -205,6 +208,7 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
                 ),
                 label2=ep["air_date"],
                 art={"poster": ep["still"]} if ep["still"] else None,
+                is_folder=False,
             )
     except TmdbError as exc:
         kodiui.notify(str(exc), error=True)
@@ -215,56 +219,78 @@ def show_season_episodes(handle: int, tmdb_id: int, season: int, title: str) -> 
 # -- releases -------------------------------------------------------------
 
 
-def show_releases(handle: int, kind: str, title: str, query: str | None = None,
-                  season: int | None = None, episode: int | None = None,
-                  tmdb: int | None = None, poster: str | None = None,
-                  index_filter: str | None = None, min_size_gb: int | None = None) -> None:
-    """Search all indexers and list releases; picking one starts it."""
+def releases_picker(kind: str, title: str, query: str | None = None,
+                    season: int | None = None, episode: int | None = None,
+                    tmdb: int | None = None) -> None:
+    """Script-style: search all indexers, then let the user pick a release
+    in a skin-themed two-line dialog; picking one starts the download."""
+    from . import picking
 
-    hits = _search_hits(kind, title, query, season, episode, tmdb)
-    if hits is None:
-        kodiui.end_directory(handle)
+    with kodiui.busy("Searching indexers…"):
+        found = _search_hits(kind, title, query, season, episode, tmdb)
+    if found is None:
         return
-    _, hits = hits
+    _, hits = found
 
-    base = dict(kind=kind, title=title, query=query, season=season,
-                episode=episode, tmdb=tmdb)
+    index_filter = None
+    min_size_gb = None
+    while True:
+        shown = [h for h in hits if util.hit_passes(h, index_filter, min_size_gb)]
+        shown.sort(key=lambda h: int(h.get("size") or 0), reverse=True)
 
-    if len(hits) > 3 and not (index_filter or min_size_gb):
-        kodiui.add_item(handle, "[B]Filter releases…[/B]", route("release_filter", **base),
-                        is_folder=False)
-
-    shown = [h for h in hits if util.hit_passes(h, index_filter, min_size_gb)]
-    shown.sort(key=lambda h: int(h.get("size") or 0), reverse=True)
-
-    if not shown:
-        kodiui.notify("No releases match that filter")
-        kodiui.add_item(handle, "[B]Clear filter[/B]", route("releases", **base),
-                        is_folder=False)
-
-    for hit in shown:
-        sources = ",".join(hit.get("indexers") or [])
-        quality = util.parse_quality(hit.get("title") or "")
-        bits = ["%s" % util.format_size(hit.get("size", 0)),
-                util.format_age(int(hit.get("age_days") or 0)), sources]
-        label2 = ("[B]%s[/B] · " % quality if quality else "") + " · ".join(bits)
-        kodiui.add_item(
-            handle,
-            hit.get("title") or "release",
-            route(
-                "pick",
-                nzb=hit.get("nzb_url", ""),
-                title=title,
-                release=hit.get("title", ""),
-            ),
-            label2=label2,
-            info={"title": hit.get("title") or "", "plot": label2},
-            is_folder=False,
+        filter_line = "[B]Filter: %s / %s[/B]" % (
+            index_filter or "any indexer",
+            ("≥ %d GB" % int(min_size_gb)) if min_size_gb else "any size",
         )
-    # "files" content: a plain list view, one row per release, full name +
-    # metadata visible — no poster "cubes".
-    kodiui.set_content(handle, "files")
-    kodiui.end_directory(handle, view=kodiui.LIST_VIEW)
+        rows = [(filter_line, "%d of %d releases match" % (len(shown), len(hits)))]
+        if not shown:
+            rows.append(("(no releases match the current filter)", ""))
+        rows += [_release_row(h) for h in shown]
+
+        choice = kodiui.select_listitems(
+            "%s — pick a release" % (title or "releases"), rows)
+        if choice < 0:
+            return
+        if choice == 0:
+            picked = _filter_dialog(hits, index_filter, min_size_gb)
+            if picked is not None:
+                index_filter, min_size_gb = picked
+            continue
+        if not shown:
+            continue
+        hit = shown[choice - 1]
+        picking.pick_release(hit.get("nzb_url", ""), title, hit.get("title", ""))
+        return
+
+
+_SIZE_STEPS = [("any size", None), ("≥ 1 GB", 1), ("≥ 4 GB", 4), ("≥ 8 GB", 8),
+               ("≥ 16 GB", 16), ("≥ 32 GB", 32)]
+
+
+def _filter_dialog(hits: list, index_filter, min_size_gb):
+    """Two quick pickers; returns (index_filter, min_size_gb) or None."""
+    indexers = sorted({i for h in hits for i in (h.get("indexers") or [])})
+    options = ["any indexer"] + indexers
+    preselect = (indexers.index(index_filter) + 1) if index_filter in indexers else 0
+    idx_choice = kodiui.select("Indexer", options, preselect=preselect)
+    if idx_choice < 0:
+        return None
+    size_choice = kodiui.select("Minimum size", [s for s, _ in _SIZE_STEPS])
+    if size_choice < 0:
+        return None
+    return (
+        indexers[idx_choice - 1] if idx_choice > 0 else None,
+        _SIZE_STEPS[size_choice][1],
+    )
+
+
+def _release_row(hit: dict):
+    sources = ",".join(hit.get("indexers") or [])
+    quality = util.parse_quality(hit.get("title") or "")
+    bits = [util.format_size(hit.get("size", 0)),
+            util.format_age(int(hit.get("age_days") or 0)), sources]
+    label2 = (("[B]%s[/B] · " % quality) if quality else "") + " · ".join(bits)
+    return (hit.get("title") or "release", label2)
 
 
 def _search_hits(kind: str, title: str, query, season, episode, tmdb):
@@ -292,35 +318,6 @@ def _search_hits(kind: str, title: str, query, season, episode, tmdb):
             kodiui.notify("No results on your indexers")
         return None
     return engine, hits
-
-
-_SIZE_STEPS = [("any size", None), (">= 1 GB", 1), (">= 4 GB", 4), (">= 8 GB", 8),
-               (">= 16 GB", 16), (">= 32 GB", 32)]
-
-
-def release_filter(kind: str, title: str, query: str | None = None,
-                   season: int | None = None, episode: int | None = None,
-                   tmdb: int | None = None) -> None:
-    """Script-style action: re-search, let the user pick indexer + min size,
-    then navigate to a filtered `releases` listing."""
-    found = _search_hits(kind, title, query, season, episode, tmdb)
-    if found is None:
-        return
-    _, hits = found
-
-    indexers = sorted({i for h in hits for i in (h.get("indexers") or [])})
-    idx_choice = kodiui.select("Indexer", ["any indexer"] + indexers)
-    if idx_choice < 0:
-        return
-    size_choice = kodiui.select("Minimum size", [s for s, _ in _SIZE_STEPS])
-    if size_choice < 0:
-        return
-
-    index_filter = indexers[idx_choice - 1] if idx_choice > 0 else None
-    min_size_gb = _SIZE_STEPS[size_choice][1]
-    kodiui.container_update(route(
-        "releases", kind=kind, title=title, query=query, season=season,
-        episode=episode, tmdb=tmdb, fi=index_filter, fs=min_size_gb))
 
 
 # -- downloads ------------------------------------------------------------
